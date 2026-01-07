@@ -1,0 +1,1974 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI记忆能力实验平台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3B82F6',
+                        secondary: '#10B981',
+                        accent: '#8B5CF6',
+                        neutral: '#64748B',
+                        light: '#F8FAFC',
+                        dark: '#1E293B'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .chat-bubble-user {
+            background-color: #3B82F6;
+            color: white;
+            border-radius: 1rem;
+            border-top-right-radius: 0;
+            padding: 1rem;
+            max-width: 80%;
+            margin-left: auto;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .chat-bubble-ai {
+            background-color: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            color: #1E293B;
+            border-radius: 1rem;
+            border-top-left-radius: 0;
+            padding: 1rem;
+            max-width: 80%;
+            margin-right: auto;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .experiment-phase {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .phase-1 { background-color: #DBEAFE; color: #1E40AF; }
+        .phase-2 { background-color: #D1FAE5; color: #065F46; }
+        .phase-3 { background-color: #EDE9FE; color: #5B21B6; }
+        .phase-4 { background-color: #FFEDD5; color: #9A3412; }
+        .memory-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        .no-memory { background-color: #F3F4F6; color: #374151; }
+        .short-memory { background-color: #DBEAFE; color: #1E40AF; }
+        .medium-memory { background-color: #D1FAE5; color: #065F46; }
+        .long-memory { background-color: #EDE9FE; color: #5B21B6; }
+        .progress-bar {
+            width: 100%;
+            background-color: #E5E7EB;
+            border-radius: 9999px;
+            height: 0.5rem;
+        }
+        .progress-fill {
+            background-color: #3B82F6;
+            height: 0.5rem;
+            border-radius: 9999px;
+            transition: all 0.5s;
+        }
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 5px 0;
+        }
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background-color: #64748B;
+            border-radius: 50%;
+            animation: typing 1.4s infinite ease-in-out both;
+        }
+        .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes typing {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans text-gray-800 min-h-screen flex flex-col">
+    <!-- 顶部导航 -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <div class="bg-blue-500 rounded-lg p-2">
+                    <i class="fa fa-brain text-white text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-blue-500">AI记忆能力实验平台</h1>
+                    <p class="text-sm text-gray-500">探索记忆能力对人机关系的影响</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div id="user-info" class="text-sm text-gray-500 hidden">
+                    <span id="current-user-name" class="font-medium"></span>
+                    <span class="memory-badge ml-2" id="memory-group-badge"></span>
+                    <span id="user-type-badge" class="memory-badge ml-2 bg-purple-500 text-white hidden">管理员</span>
+                </div>
+                <button id="login-btn" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors">
+                    <i class="fa fa-sign-in mr-2"></i>登录/注册
+                </button>
+                <button id="logout-btn" class="text-gray-500 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-gray-100 hidden">
+                    <i class="fa fa-sign-out"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主要内容区域 - 未登录时显示 -->
+    <div id="guest-content" class="flex-1 flex items-center justify-center">
+        <div class="text-center max-w-md mx-auto p-8">
+            <div class="w-24 h-24 bg-blue-500 bg-opacity-10 rounded-full flex items-center justify-center mx-auto mb-6">
+                <i class="fa fa-brain text-blue-500 text-3xl"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-blue-500 mb-4">欢迎参与AI记忆能力实验</h2>
+            <p class="text-gray-600 mb-6">请登录或注册以开始实验。本实验将探索不同记忆能力对AI与人类关系的影响。</p>
+            <button id="guest-login-btn" class="bg-blue-500 text-white px-8 py-3 rounded-lg font-medium hover:bg-blue-600 transition-colors">
+                <i class="fa fa-sign-in mr-2"></i>登录/注册
+            </button>
+        </div>
+    </div>
+
+    <!-- 普通用户实验内容区域 - 登录后显示 -->
+    <div id="normal-user-content" class="hidden">
+        <!-- 实验进度条 -->
+        <div class="bg-white border-b">
+            <div class="container mx-auto px-4 py-2">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-sm font-medium text-gray-500">实验进度</span>
+                    <span id="progress-text" class="text-sm text-gray-500">0/4 次对话</span>
+                </div>
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <main class="flex-1 container mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <!-- 左侧实验信息面板 -->
+            <div class="lg:col-span-1 space-y-6">
+                <!-- 当前任务信息 -->
+                <div class="bg-white rounded-lg shadow-sm border p-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold text-blue-500 flex items-center">
+                            <i class="fa fa-tasks text-blue-500 mr-2"></i>当前任务
+                        </h2>
+                        <span id="task-phase" class="experiment-phase phase-1">阶段 1</span>
+                    </div>
+
+                    <div id="task-info-content">
+                        <div class="text-center text-gray-500 py-8">
+                            <i class="fa fa-info-circle text-3xl mb-3 text-blue-500 opacity-50"></i>
+                            <p>加载任务中...</p>
+                        </div>
+                    </div>
+
+                    <!-- 任务计时器 -->
+                    <div id="task-timer" class="mt-4 p-3 bg-blue-500 bg-opacity-5 rounded-lg border hidden">
+                        <div class="flex items-center justify-between text-sm">
+                            <div class="flex items-center text-blue-500">
+                                <i class="fa fa-clock mr-2"></i>
+                                <span>对话时间</span>
+                            </div>
+                            <div id="timer-display" class="font-mono font-bold text-blue-500">15:00</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 实验指导 -->
+                <div class="bg-white rounded-lg shadow-sm border p-5">
+                    <h3 class="font-semibold text-blue-500 mb-3 flex items-center">
+                        <i class="fa fa-graduation-cap text-blue-500 mr-2"></i>实验指导
+                    </h3>
+                    <div class="text-sm text-gray-500 space-y-2">
+                        <p>本实验包含4次与AI的对话，分别在：</p>
+                        <ul class="list-disc list-inside space-y-1 ml-2">
+                            <li>第1天：关系建立</li>
+                            <li>第3天：记忆测试</li>
+                            <li>第10天：深度互动</li>
+                            <li>第17天：综合评估</li>
+                        </ul>
+                        <p class="mt-3">请根据每个阶段的任务要求与AI进行自然对话。</p>
+                    </div>
+                </div>
+
+                <!-- 操作按钮 -->
+                <div class="space-y-3">
+                    <button id="start-task-btn" class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        <i class="fa fa-play mr-2"></i>开始当前任务
+                    </button>
+                    <button id="complete-task-btn" class="w-full bg-green-500 text-white py-3 rounded-lg font-medium hover:bg-green-600 transition-colors hidden">
+                        <i class="fa fa-check mr-2"></i>完成任务并填写问卷
+                    </button>
+                    <button id="history-btn" class="w-full border border-gray-300 py-3 rounded-lg font-medium hover:bg-gray-50 transition-colors">
+                        <i class="fa fa-history mr-2"></i>查看实验历史
+                    </button>
+                </div>
+            </div>
+
+            <!-- 中间聊天区域 -->
+            <div class="lg:col-span-3 bg-white rounded-lg shadow-sm border flex flex-col h-[calc(100vh-200px)]">
+                <!-- 聊天头部 -->
+                <div class="p-4 border-b">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-10 h-10 rounded-full bg-blue-500 bg-opacity-10 flex items-center justify-center">
+                                <i class="fa fa-robot text-blue-500"></i>
+                            </div>
+                            <div>
+                                <h2 class="font-semibold text-blue-500">与AI助手对话</h2>
+                                <p id="ai-description" class="text-sm text-gray-500">请开始与AI进行对话</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <span id="conversation-count" class="text-sm text-gray-500 hidden">对话轮次: <span id="message-count">0</span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 聊天内容区 -->
+                <div id="chat-container" class="flex-1 p-4 overflow-y-auto space-y-4 bg-gray-50 bg-opacity-50">
+                    <!-- 欢迎消息 -->
+                    <div class="text-center py-12">
+                        <div class="w-16 h-16 bg-blue-500 bg-opacity-10 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <i class="fa fa-comments text-blue-500 text-2xl"></i>
+                        </div>
+                        <h3 class="text-lg font-semibold text-blue-500 mb-2">欢迎参与AI记忆能力实验</h3>
+                        <p class="text-gray-500 max-w-md mx-auto">系统将自动为您分配当前任务，点击"开始当前任务"按钮与AI助手开始对话。</p>
+                    </div>
+                </div>
+
+                <!-- 输入区域 -->
+                <div class="p-4 border-t bg-white">
+                    <div class="flex space-x-3">
+                        <textarea
+                            id="message-input"
+                            placeholder="请输入您想说的话..."
+                            class="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none transition-all"
+                            rows="2"
+                            disabled
+                        ></textarea>
+                        <button
+                            id="send-btn"
+                            class="bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 transition-colors flex items-center justify-center self-end disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled
+                        >
+                            <i class="fa fa-paper-plane"></i>
+                        </button>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-2 flex justify-between">
+                        <span>请根据当前任务要求与AI进行自然对话</span>
+                        <span id="character-count">0/500</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 管理员内容区域 -->
+    <div id="admin-user-content" class="hidden">
+        <div class="container mx-auto px-4 py-6">
+            <div class="bg-white rounded-lg shadow-sm border p-6">
+                <h2 class="text-2xl font-bold text-blue-500 mb-6 flex items-center">
+                    <i class="fa fa-users mr-3"></i>用户管理面板
+                </h2>
+
+                <!-- 用户列表 -->
+                <div class="bg-white border rounded-lg p-4">
+                    <h3 class="font-semibold text-blue-500 mb-4 flex items-center">
+                        <i class="fa fa-list mr-2"></i>普通用户列表
+                    </h3>
+                    <div id="user-list" class="space-y-3">
+                        <div class="text-center py-8 text-gray-500">
+                            <i class="fa fa-spinner fa-spin text-2xl mb-2"></i>
+                            <p>加载中...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 登录/注册模态框 -->
+    <div id="auth-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+            <div class="flex justify-between items-center p-6 border-b">
+                <h3 class="text-xl font-bold text-blue-500">用户登录/注册</h3>
+                <button id="close-auth" class="text-gray-500 hover:text-gray-800 p-2 rounded-lg hover:bg-gray-100">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+
+            <div class="p-6">
+                <!-- 登录表单 -->
+                <div id="login-form" class="space-y-4">
+                    <h4 class="font-semibold text-blue-500">登录账户</h4>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-500 mb-2">用户名</label>
+                        <input type="text" id="login-username"
+                               class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                               placeholder="请输入用户名">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-500 mb-2">密码</label>
+                        <input type="password" id="login-password"
+                               class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                               placeholder="请输入密码">
+                    </div>
+
+                    <button id="submit-login"
+                            class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium hover:bg-blue-600 transition-colors">
+                        登录
+                    </button>
+
+                    <div class="text-center">
+                        <button id="switch-to-register" class="text-blue-500 hover:text-blue-600 text-sm">
+                            没有账户？立即注册
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 注册表单 -->
+                <div id="register-form" class="space-y-4 hidden">
+                    <h4 class="font-semibold text-blue-500">注册新账户</h4>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-500 mb-2">用户名</label>
+                            <input type="text" id="register-username"
+                                   class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="请输入用户名">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-500 mb-2">密码</label>
+                            <input type="password" id="register-password"
+                                   class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="请输入密码">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-500 mb-2">姓名</label>
+                        <input type="text" id="register-name"
+                               class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                               placeholder="请输入真实姓名">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-500 mb-2">年龄</label>
+                            <input type="number" id="register-age"
+                                   class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="年龄" min="1" max="100">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-500 mb-2">性别</label>
+                            <select id="register-gender"
+                                    class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">请选择</option>
+                                <option value="male">男</option>
+                                <option value="female">女</option>
+                                <option value="other">其他</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-500 mb-2">记忆组别</label>
+                        <select id="register-memory-group"
+                                class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <option value="no_memory">无记忆组</option>
+                            <option value="short_memory">短记忆组</option>
+                            <option value="medium_memory">中记忆组</option>
+                            <option value="long_memory">长记忆组</option>
+                        </select>
+                    </div>
+
+                    <button id="submit-register"
+                            class="w-full bg-green-500 text-white py-3 rounded-lg font-medium hover:bg-green-600 transition-colors">
+                        注册
+                    </button>
+
+                    <div class="text-center">
+                        <button id="switch-to-login" class="text-blue-500 hover:text-blue-600 text-sm">
+                            已有账户？立即登录
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 历史记录模态框 -->
+    <div id="history-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden">
+            <div class="flex justify-between items-center p-6 border-b">
+                <h3 class="text-xl font-bold text-blue-500">实验历史记录</h3>
+                <button id="close-history" class="text-gray-500 hover:text-gray-800 p-2 rounded-lg hover:bg-gray-100">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- 任务历史 -->
+                    <div class="bg-white border rounded-lg p-4">
+                        <h4 class="font-semibold text-blue-500 mb-3 flex items-center">
+                            <i class="fa fa-tasks text-blue-500 mr-2"></i>任务完成历史
+                        </h4>
+                        <div id="task-history-list" class="space-y-3">
+                            <div class="text-center py-4 text-gray-500">
+                                <i class="fa fa-inbox text-2xl mb-2 opacity-50"></i>
+                                <p>暂无任务记录</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 对话统计 -->
+                    <div class="bg-white border rounded-lg p-4">
+                        <h4 class="font-semibold text-blue-500 mb-3 flex items-center">
+                            <i class="fa fa-chart-bar text-blue-500 mr-2"></i>对话统计
+                        </h4>
+                        <div id="chat-stats" class="space-y-4">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="bg-blue-50 rounded-lg p-3 text-center">
+                                    <div class="text-2xl font-bold text-blue-500">0</div>
+                                    <div class="text-xs text-gray-500 mt-1">已完成任务</div>
+                                </div>
+                                <div class="bg-green-50 rounded-lg p-3 text-center">
+                                    <div class="text-2xl font-bold text-green-500">0</div>
+                                    <div class="text-xs text-gray-500 mt-1">当前对话轮次</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 问卷模态框 -->
+    <div id="survey-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden">
+            <div class="flex justify-between items-center p-6 border-b">
+                <h3 class="text-xl font-bold text-blue-500">实验问卷</h3>
+                <button id="close-survey" class="text-gray-500 hover:text-gray-800 p-2 rounded-lg hover:bg-gray-100">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                    <div class="flex items-center">
+                        <i class="fa fa-clipboard-check text-blue-500 mr-3"></i>
+                        <div>
+                            <h4 class="font-medium text-blue-900">任务完成确认</h4>
+                            <p class="text-sm text-blue-700 mt-1">请填写本次对话的体验问卷</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="survey-content" class="space-y-6">
+                    <div class="bg-white border rounded-lg p-4">
+                        <h4 class="font-semibold text-blue-500 mb-3">心智感知</h4>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-500 mb-2">这个AI似乎有它自己的信念</label>
+                                <select class="w-full border border-gray-300 rounded-lg px-3 py-2 mind-perception-q1">
+                                    <option value="1">非常不同意</option>
+                                    <option value="2">不同意</option>
+                                    <option value="3" selected>中立</option>
+                                    <option value="4">同意</option>
+                                    <option value="5">非常同意</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-500 mb-2">这个AI能够体验情感</label>
+                                <select class="w-full border border-gray-300 rounded-lg px-3 py-2 mind-perception-q2">
+                                    <option value="1">非常不同意</option>
+                                    <option value="2">不同意</option>
+                                    <option value="3" selected>中立</option>
+                                    <option value="4">同意</option>
+                                    <option value="5">非常同意</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border rounded-lg p-4">
+                        <h4 class="font-semibold text-blue-500 mb-3">亲密度</h4>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-500 mb-2">我感觉与这个AI很亲近</label>
+                                <select class="w-full border border-gray-300 rounded-lg px-3 py-2 intimacy-q1">
+                                    <option value="1">非常不同意</option>
+                                    <option value="2">不同意</option>
+                                    <option value="3" selected>中立</option>
+                                    <option value="4">同意</option>
+                                    <option value="5">非常同意</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white border rounded-lg p-4">
+                        <h4 class="font-semibold text-blue-500 mb-3">信任感</h4>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-500 mb-2">我信任这个AI给出的建议</label>
+                                <select class="w-full border border-gray-300 rounded-lg px-3 py-2 trust-q1">
+                                    <option value="1">非常不同意</option>
+                                    <option value="2">不同意</option>
+                                    <option value="3" selected>中立</option>
+                                    <option value="4">同意</option>
+                                    <option value="5">非常同意</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end space-x-3 pt-6 border-t mt-6">
+                    <button id="cancel-survey" class="border border-gray-300 px-6 py-2 rounded-lg text-gray-500 hover:bg-gray-50 transition-colors">
+                        稍后填写
+                    </button>
+                    <button id="submit-survey" class="bg-blue-500 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-600 transition-colors">
+                        提交问卷
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 用户详情模态框 -->
+    <div id="user-details-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden">
+            <div class="flex justify-between items-center p-6 border-b">
+                <h3 class="text-xl font-bold text-blue-500">用户详情</h3>
+                <button id="close-user-details" class="text-gray-500 hover:text-gray-800 p-2 rounded-lg hover:bg-gray-100">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+                <div id="user-details-content" class="space-y-6">
+                    <!-- 用户基本信息 -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="bg-white border rounded-lg p-4">
+                            <h4 class="font-semibold text-blue-500 mb-3 flex items-center">
+                                <i class="fa fa-user text-blue-500 mr-2"></i>基本信息
+                            </h4>
+                            <div class="space-y-3">
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">姓名:</span>
+                                    <span id="detail-user-name" class="font-medium">-</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">用户名:</span>
+                                    <span id="detail-username" class="font-medium">-</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">年龄:</span>
+                                    <span id="detail-age" class="font-medium">-</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">性别:</span>
+                                    <span id="detail-gender" class="font-medium">-</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">记忆组别:</span>
+                                    <span id="detail-memory-group" class="font-medium">-</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 实验进度 -->
+                        <div class="bg-white border rounded-lg p-4">
+                            <h4 class="font-semibold text-blue-500 mb-3 flex items-center">
+                                <i class="fa fa-chart-line text-blue-500 mr-2"></i>实验进度
+                            </h4>
+                            <div class="space-y-4">
+                                <div>
+                                    <div class="flex justify-between mb-1">
+                                        <span class="text-gray-500">已完成任务</span>
+                                        <span id="detail-completed-tasks" class="font-medium">0/4</span>
+                                    </div>
+                                    <div class="progress-bar">
+                                        <div id="detail-progress-fill" class="progress-fill" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div class="bg-blue-50 rounded-lg p-3 text-center">
+                                        <div class="text-lg font-bold text-blue-500" id="detail-experiment-phase">-</div>
+                                        <div class="text-xs text-gray-500 mt-1">当前阶段</div>
+                                    </div>
+                                    <div class="bg-green-50 rounded-lg p-3 text-center">
+                                        <div class="text-lg font-bold text-green-500" id="detail-total-messages">-</div>
+                                        <div class="text-xs text-gray-500 mt-1">总对话数</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 任务完成情况 -->
+                    <div class="bg-white border rounded-lg p-4">
+                        <h4 class="font-semibold text-blue-500 mb-3 flex items-center">
+                            <i class="fa fa-tasks text-blue-500 mr-2"></i>任务完成情况
+                        </h4>
+                        <div id="task-completion-details" class="space-y-3">
+                            <!-- 任务完成情况将在这里动态生成 -->
+                        </div>
+                    </div>
+
+                    <!-- 对话记录 -->
+                    <div class="bg-white border rounded-lg p-4">
+                        <h4 class="font-semibold text-blue-500 mb-3 flex items-center">
+                            <i class="fa fa-comments text-blue-500 mr-2"></i>对话记录
+                        </h4>
+                        <div id="user-chat-history" class="space-y-3 max-h-60 overflow-y-auto">
+                            <!-- 对话记录将在这里动态生成 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 通知消息 -->
+    <div id="notification-toast" class="fixed bottom-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transform translate-y-20 opacity-0 transition-all duration-300 flex items-center">
+        <i class="fa fa-check-circle mr-3"></i>
+        <span id="notification-text">操作成功</span>
+    </div>
+
+    <script>
+        // API服务
+        const ApiService = {
+            baseURL: 'http://localhost:3000/api',
+            sessionToken: localStorage.getItem('session_token'),
+
+            async request(endpoint, options = {}) {
+                try {
+                    const url = `${this.baseURL}${endpoint}`;
+
+                    // 添加认证头
+                    const headers = {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    };
+
+                    if (this.sessionToken) {
+                        headers['Authorization'] = `Bearer ${this.sessionToken}`;
+                    }
+
+                    const response = await fetch(url, {
+                        headers,
+                        ...options
+                    });
+
+                    if (!response.ok) {
+                        if (response.status === 401) {
+                            // 未授权，清除会话
+                            this.clearSession();
+                            window.location.reload();
+                        }
+                        throw new Error(`HTTP错误! 状态: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    return data;
+                } catch (error) {
+                    console.error('API请求失败:', error);
+                    throw error;
+                }
+            },
+
+            setSession(token) {
+                this.sessionToken = token;
+                localStorage.setItem('session_token', token);
+            },
+
+            clearSession() {
+                this.sessionToken = null;
+                localStorage.removeItem('session_token');
+            },
+
+            // 认证相关
+            async register(userData) {
+                return this.request('/auth/register', {
+                    method: 'POST',
+                    body: JSON.stringify(userData)
+                });
+            },
+
+            async login(credentials) {
+                return this.request('/auth/login', {
+                    method: 'POST',
+                    body: JSON.stringify(credentials)
+                });
+            },
+
+            async logout() {
+                if (this.sessionToken) {
+                    await this.request('/auth/logout', {
+                        method: 'POST',
+                        body: JSON.stringify({ session_token: this.sessionToken })
+                    });
+                }
+                this.clearSession();
+            },
+
+            async getCurrentUser() {
+                return this.request('/users/me');
+            },
+
+            // 系统相关
+            async getSystemConfig() {
+                return this.request('/system/config');
+            },
+
+            // 任务相关
+            async getTasks() {
+                return this.request('/tasks');
+            },
+
+            async getTask(taskId) {
+                return this.request(`/tasks/${taskId}`);
+            },
+
+            async getTaskDocument(taskId) {
+                return this.request(`/users/me/tasks/${taskId}/document`);
+            },
+
+            async saveTaskDocument(taskId, documentData) {
+                return this.request(`/users/me/tasks/${taskId}/document`, {
+                    method: 'POST',
+                    body: JSON.stringify(documentData)
+                });
+            },
+
+            async submitTask(taskId, questionnaireData = {}) {
+                return this.request(`/users/me/tasks/${taskId}/submit`, {
+                    method: 'POST',
+                    body: JSON.stringify({ questionnaire_data: questionnaireData })
+                });
+            },
+
+            async getTaskHistory() {
+                return this.request('/users/me/tasks/history');
+            },
+
+            // 聊天相关
+            async saveChatMessage(taskId, content, isUser) {
+                return this.request(`/users/me/tasks/${taskId}/chats`, {
+                    method: 'POST',
+                    body: JSON.stringify({ content, isUser })
+                });
+            },
+
+            async getTaskChats(taskId) {
+                return this.request(`/users/me/tasks/${taskId}/chats`);
+            },
+
+            async getChatHistory() {
+                return this.request('/users/me/chats/history');
+            },
+
+            // AI相关
+            async getAIResponse(taskId, userMessage, responseStyle) {
+                return this.request('/ai/response', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        taskId,
+                        userMessage,
+                        responseStyle
+                    })
+                });
+            },
+
+            // 实验进度
+            async getExperimentProgress() {
+                return this.request('/experiment/progress');
+            },
+
+            // 管理员相关API
+            async adminGetUsers() {
+                return this.request('/admin/users');
+            },
+
+            async adminGetUser(userId) {
+                return this.request(`/admin/users/${userId}`);
+            },
+
+            async adminUpdateUserProgress(userId, progressData) {
+                return this.request(`/admin/users/${userId}/progress`, {
+                    method: 'POST',
+                    body: JSON.stringify(progressData)
+                });
+            },
+
+            // 获取当前任务API
+            async getCurrentTask() {
+                return this.request('/users/me/tasks/current');
+            }
+        };
+
+        // 应用状态管理
+        class AppState {
+            constructor() {
+                this.currentUser = null;
+                this.currentTaskId = null;
+                this.currentTask = null;
+                this.conversationTimer = null;
+                this.conversationTime = 15 * 60;
+                this.messageCount = 0;
+                this.tasks = [];
+                this.userData = null;
+                this.isTaskActive = false;
+                this.allUsers = []; // 管理员用户列表
+            }
+
+            async initialize() {
+                try {
+                    // 检查是否有保存的会话
+                    if (ApiService.sessionToken) {
+                        const userResponse = await ApiService.getCurrentUser();
+                        if (userResponse.success) {
+                            this.currentUser = userResponse.data;
+                            this.userData = userResponse.data;
+
+                            // 如果是管理员，加载用户列表
+                            if (this.isAdmin()) {
+                                await this.loadAllUsers();
+                            } else {
+                                // 普通用户加载当前任务
+                                await this.loadCurrentTask();
+                            }
+                        } else {
+                            ApiService.clearSession();
+                        }
+                    }
+
+                    // 加载任务列表
+                    const tasksResponse = await ApiService.getTasks();
+                    if (tasksResponse.success) {
+                        this.tasks = tasksResponse.data;
+                    }
+
+                } catch (error) {
+                    console.error('初始化应用状态失败:', error);
+                }
+            }
+
+            async loadCurrentTask() {
+                if (!this.isNormalUser()) return;
+
+                try {
+                    const response = await ApiService.getCurrentTask();
+                    if (response.success) {
+                        if (response.data) {
+                            this.currentTask = response.data;
+                            this.currentTaskId = response.data.id;
+                        } else {
+                            // 如果没有当前任务，说明所有任务都完成了
+                            this.currentTask = null;
+                            this.currentTaskId = null;
+                        }
+                    }
+                } catch (error) {
+                    console.error('加载当前任务失败:', error);
+                }
+            }
+
+            async loadAllUsers() {
+                if (!this.isAdmin()) return;
+
+                try {
+                    const response = await ApiService.adminGetUsers();
+                    if (response.success) {
+                        this.allUsers = response.data;
+                    }
+                } catch (error) {
+                    console.error('加载用户列表失败:', error);
+                }
+            }
+
+            isAdmin() {
+                return this.currentUser && this.currentUser.user_type === 'admin';
+            }
+
+            isNormalUser() {
+                return this.currentUser && this.currentUser.user_type === 'normal';
+            }
+
+            getMemoryGroupBadge(memoryGroup) {
+                const badges = {
+                    'no_memory': { class: 'no-memory', text: '无记忆' },
+                    'short_memory': { class: 'short-memory', text: '短记忆' },
+                    'medium_memory': { class: 'medium-memory', text: '中记忆' },
+                    'long_memory': { class: 'long-memory', text: '长记忆' }
+                };
+                return badges[memoryGroup] || { class: 'no-memory', text: '未知' };
+            }
+
+            getCompletedTasksCount() {
+                if (!this.userData || !this.userData.task_set) return 0;
+                return this.userData.task_set.filter(task => task.submitted).length;
+            }
+
+            getProgressPercentage() {
+                return (this.getCompletedTasksCount() / 4) * 100;
+            }
+
+            isLoggedIn() {
+                return !!this.currentUser;
+            }
+
+            hasCurrentTask() {
+                return !!this.currentTask;
+            }
+
+            isAllTasksCompleted() {
+                return this.getCompletedTasksCount() >= 4;
+            }
+        }
+
+        // UI管理器
+        class UIManager {
+            constructor(appState) {
+                this.appState = appState;
+                this.elements = this.initializeElements();
+                if (this.elements) {
+                    this.initializeEventListeners();
+                }
+            }
+
+            initializeElements() {
+                try {
+                    const elements = {};
+
+                    // 定义所有需要的元素ID
+                    const elementIds = [
+                        // 认证相关
+                        'auth-modal', 'login-btn', 'logout-btn', 'guest-login-btn', 'close-auth',
+                        'login-form', 'register-form', 'switch-to-register', 'switch-to-login',
+                        'submit-login', 'submit-register', 'login-username', 'login-password',
+                        'register-username', 'register-password', 'register-name', 'register-age',
+                        'register-gender', 'register-memory-group',
+
+                        // 内容区域
+                        'guest-content', 'normal-user-content', 'admin-user-content',
+
+                        // 用户信息
+                        'user-info', 'current-user-name', 'memory-group-badge', 'user-type-badge',
+
+                        // 进度条
+                        'progress-text', 'progress-fill',
+
+                        // 任务信息
+                        'task-phase', 'task-info-content', 'task-timer', 'timer-display',
+
+                        // 按钮
+                        'start-task-btn', 'complete-task-btn', 'history-btn',
+
+                        // 聊天区域
+                        'chat-container', 'message-input', 'send-btn', 'ai-description',
+                        'conversation-count', 'message-count', 'character-count',
+
+                        // 管理员相关
+                        'user-list',
+
+                        // 历史记录模态框
+                        'history-modal', 'close-history', 'task-history-list', 'chat-stats',
+
+                        // 问卷模态框
+                        'survey-modal', 'close-survey', 'survey-content', 'cancel-survey', 'submit-survey',
+
+                        // 用户详情模态框
+                        'user-details-modal', 'close-user-details', 'user-details-content',
+                        'detail-user-name', 'detail-username', 'detail-age', 'detail-gender',
+                        'detail-memory-group', 'detail-completed-tasks', 'detail-progress-fill',
+                        'detail-experiment-phase', 'detail-total-messages', 'task-completion-details',
+                        'user-chat-history',
+
+                        // 通知
+                        'notification-toast', 'notification-text'
+                    ];
+
+                    // 获取所有元素
+                    elementIds.forEach(id => {
+                        const element = document.getElementById(id);
+                        if (element) {
+                            // 将id转换为驼峰命名
+                            const camelCaseId = id.replace(/-([a-z])/g, (g) => g[1].toUpperCase());
+                            elements[camelCaseId] = element;
+                        }
+                    });
+
+                    return elements;
+                } catch (error) {
+                    console.error('初始化元素失败:', error);
+                    return null;
+                }
+            }
+
+            initializeEventListeners() {
+                if (!this.elements) return;
+
+                // 认证相关事件
+                if (this.elements.loginBtn) {
+                    this.elements.loginBtn.addEventListener('click', () => this.showAuthModal());
+                }
+                if (this.elements.guestLoginBtn) {
+                    this.elements.guestLoginBtn.addEventListener('click', () => this.showAuthModal());
+                }
+                if (this.elements.logoutBtn) {
+                    this.elements.logoutBtn.addEventListener('click', () => this.logout());
+                }
+                if (this.elements.closeAuth) {
+                    this.elements.closeAuth.addEventListener('click', () => this.hideAuthModal());
+                }
+                if (this.elements.switchToRegister) {
+                    this.elements.switchToRegister.addEventListener('click', () => this.showRegisterForm());
+                }
+                if (this.elements.switchToLogin) {
+                    this.elements.switchToLogin.addEventListener('click', () => this.showLoginForm());
+                }
+                if (this.elements.submitLogin) {
+                    this.elements.submitLogin.addEventListener('click', () => this.login());
+                }
+                if (this.elements.submitRegister) {
+                    this.elements.submitRegister.addEventListener('click', () => this.register());
+                }
+
+                // 消息输入监听
+                if (this.elements.messageInput) {
+                    this.elements.messageInput.addEventListener('input', (e) => {
+                        const length = e.target.value.length;
+                        if (this.elements.characterCount) {
+                            this.elements.characterCount.textContent = `${length}/500`;
+                        }
+
+                        if (this.elements.sendBtn) {
+                            this.elements.sendBtn.disabled = !(length > 0 && length <= 500);
+                        }
+                    });
+                }
+
+                // 发送消息
+                if (this.elements.sendBtn) {
+                    this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
+                }
+
+                if (this.elements.messageInput) {
+                    this.elements.messageInput.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            this.sendMessage();
+                        }
+                    });
+                }
+
+                // 开始任务
+                if (this.elements.startTaskBtn) {
+                    this.elements.startTaskBtn.addEventListener('click', () => this.startTask());
+                }
+
+                // 完成任务
+                if (this.elements.completeTaskBtn) {
+                    this.elements.completeTaskBtn.addEventListener('click', () => this.showSurvey());
+                }
+
+                // 历史记录
+                if (this.elements.historyBtn) {
+                    this.elements.historyBtn.addEventListener('click', () => this.showHistory());
+                }
+
+                // 问卷相关
+                if (this.elements.closeSurvey) {
+                    this.elements.closeSurvey.addEventListener('click', () => this.hideSurvey());
+                }
+                if (this.elements.cancelSurvey) {
+                    this.elements.cancelSurvey.addEventListener('click', () => this.hideSurvey());
+                }
+                if (this.elements.submitSurvey) {
+                    this.elements.submitSurvey.addEventListener('click', () => this.submitSurvey());
+                }
+
+                // 历史记录关闭
+                if (this.elements.closeHistory) {
+                    this.elements.closeHistory.addEventListener('click', () => this.hideHistory());
+                }
+
+                // 用户详情模态框关闭
+                if (this.elements.closeUserDetails) {
+                    this.elements.closeUserDetails.addEventListener('click', () => this.hideUserDetails());
+                }
+
+                // 点击模态框外部关闭
+                [this.elements.authModal, this.elements.historyModal,
+                 this.elements.surveyModal, this.elements.userDetailsModal]
+                    .forEach(modal => {
+                        if (modal) {
+                            modal.addEventListener('click', (e) => {
+                                if (e.target === modal) {
+                                    this.hideModal(modal);
+                                }
+                            });
+                        }
+                    });
+            }
+
+            // 初始化UI
+            async initializeUI() {
+                this.updateProgress();
+            }
+
+            // 认证相关方法
+            showAuthModal() {
+                if (this.elements.authModal) {
+                    this.elements.authModal.classList.remove('hidden');
+                    this.showLoginForm();
+                }
+            }
+
+            hideAuthModal() {
+                if (this.elements.authModal) {
+                    this.elements.authModal.classList.add('hidden');
+                }
+            }
+
+            showLoginForm() {
+                if (this.elements.loginForm) this.elements.loginForm.classList.remove('hidden');
+                if (this.elements.registerForm) this.elements.registerForm.classList.add('hidden');
+            }
+
+            showRegisterForm() {
+                if (this.elements.loginForm) this.elements.loginForm.classList.add('hidden');
+                if (this.elements.registerForm) this.elements.registerForm.classList.remove('hidden');
+            }
+
+            async login() {
+                const username = this.elements.loginUsername?.value.trim();
+                const password = this.elements.loginPassword?.value;
+
+                if (!username || !password) {
+                    this.showNotification('请填写用户名和密码');
+                    return;
+                }
+
+                try {
+                    const response = await ApiService.login({ username, password });
+                    if (response.success) {
+                        ApiService.setSession(response.data.session_token);
+                        this.appState.currentUser = response.data.user;
+                        this.appState.userData = response.data.user;
+
+                        this.hideAuthModal();
+                        await this.updateUIAfterLogin();
+                        this.showNotification('登录成功');
+                    } else {
+                        this.showNotification(response.message || '登录失败');
+                    }
+                } catch (error) {
+                    this.showNotification('登录失败，请检查网络连接');
+                }
+            }
+
+            async register() {
+                const username = this.elements.registerUsername?.value.trim();
+                const password = this.elements.registerPassword?.value;
+                const name = this.elements.registerName?.value.trim();
+                const age = this.elements.registerAge?.value;
+                const gender = this.elements.registerGender?.value;
+                const memoryGroup = this.elements.registerMemoryGroup?.value;
+
+                if (!username || !password || !name || !age || !gender) {
+                    this.showNotification('请填写所有必填字段');
+                    return;
+                }
+
+                try {
+                    const response = await ApiService.register({
+                        username,
+                        password,
+                        name,
+                        age: parseInt(age),
+                        gender,
+                        memory_group: memoryGroup
+                    });
+
+                    if (response.success) {
+                        ApiService.setSession(response.data.session_token);
+                        this.appState.currentUser = response.data.user;
+                        this.appState.userData = response.data.user;
+
+                        this.hideAuthModal();
+                        await this.updateUIAfterLogin();
+                        this.showNotification('注册成功');
+                    } else {
+                        this.showNotification(response.message || '注册失败');
+                    }
+                } catch (error) {
+                    this.showNotification('注册失败，请检查网络连接');
+                }
+            }
+
+            async logout() {
+                try {
+                    await ApiService.logout();
+                    this.appState.currentUser = null;
+                    this.appState.userData = null;
+                    this.updateUIAfterLogout();
+                    this.showNotification('已退出登录');
+                } catch (error) {
+                    console.error('退出登录失败:', error);
+                }
+            }
+
+            // 更新登录后UI
+            async updateUIAfterLogin() {
+                // 隐藏访客内容
+                if (this.elements.guestContent) this.elements.guestContent.classList.add('hidden');
+
+                // 根据用户类型显示不同内容
+                if (this.appState.isAdmin()) {
+                    // 显示管理员界面
+                    if (this.elements.adminUserContent) this.elements.adminUserContent.classList.remove('hidden');
+                    if (this.elements.normalUserContent) this.elements.normalUserContent.classList.add('hidden');
+                    await this.appState.loadAllUsers();
+                    this.renderUserList();
+                } else {
+                    // 显示普通用户界面
+                    if (this.elements.normalUserContent) this.elements.normalUserContent.classList.remove('hidden');
+                    if (this.elements.adminUserContent) this.elements.adminUserContent.classList.add('hidden');
+                    // 等待加载当前任务
+                    await this.appState.loadCurrentTask();
+                    this.updateTaskInfo();
+                }
+
+                // 更新用户信息
+                this.updateUserInfo();
+
+                // 更新登录按钮状态
+                if (this.elements.loginBtn) this.elements.loginBtn.classList.add('hidden');
+                if (this.elements.logoutBtn) this.elements.logoutBtn.classList.remove('hidden');
+            }
+
+            updateUIAfterLogout() {
+                // 显示访客内容，隐藏应用内容
+                if (this.elements.guestContent) this.elements.guestContent.classList.remove('hidden');
+                if (this.elements.normalUserContent) this.elements.normalUserContent.classList.add('hidden');
+                if (this.elements.adminUserContent) this.elements.adminUserContent.classList.add('hidden');
+
+                // 更新登录按钮状态
+                if (this.elements.loginBtn) this.elements.loginBtn.classList.remove('hidden');
+                if (this.elements.logoutBtn) this.elements.logoutBtn.classList.add('hidden');
+
+                // 重置聊天状态
+                this.resetChat();
+            }
+
+            updateUserInfo() {
+                if (this.appState.currentUser) {
+                    if (this.elements.userInfo) this.elements.userInfo.classList.remove('hidden');
+                    if (this.elements.currentUserName) {
+                        this.elements.currentUserName.textContent = this.appState.currentUser.name;
+                    }
+
+                    // 显示用户类型徽章（如果是管理员）
+                    if (this.appState.isAdmin() && this.elements.userTypeBadge) {
+                        this.elements.userTypeBadge.classList.remove('hidden');
+                    } else if (this.elements.userTypeBadge) {
+                        this.elements.userTypeBadge.classList.add('hidden');
+                    }
+
+                    // 显示记忆组别徽章（如果是普通用户）
+                    if (this.appState.isNormalUser()) {
+                        const memoryBadge = this.appState.getMemoryGroupBadge(this.appState.currentUser.memory_group);
+                        if (this.elements.memoryGroupBadge) {
+                            this.elements.memoryGroupBadge.textContent = memoryBadge.text;
+                            this.elements.memoryGroupBadge.className = `memory-badge ${memoryBadge.class}`;
+                        }
+                    } else if (this.elements.memoryGroupBadge) {
+                        this.elements.memoryGroupBadge.textContent = '';
+                    }
+                } else if (this.elements.userInfo) {
+                    this.elements.userInfo.classList.add('hidden');
+                }
+            }
+
+            // 管理员界面 - 渲染用户列表
+            async renderUserList() {
+                if (!this.elements.userList) return;
+
+                await this.appState.loadAllUsers();
+
+                if (this.appState.allUsers.length === 0) {
+                    this.elements.userList.innerHTML = `
+                        <div class="text-center py-8 text-gray-500">
+                            <i class="fa fa-users text-2xl mb-2 opacity-50"></i>
+                            <p>暂无普通用户</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                this.elements.userList.innerHTML = '';
+                this.appState.allUsers.forEach(user => {
+                    const userDiv = document.createElement('div');
+                    userDiv.className = 'border rounded-lg p-4 hover:bg-gray-50 transition-colors';
+
+                    userDiv.innerHTML = `
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <h4 class="font-semibold text-blue-500">${user.name}</h4>
+                                <p class="text-sm text-gray-500">用户名: ${user.username} | 年龄: ${user.age} | 性别: ${user.gender}</p>
+                            </div>
+                            <span class="memory-badge ${this.appState.getMemoryGroupBadge(user.memory_group).class}">
+                                ${this.appState.getMemoryGroupBadge(user.memory_group).text}
+                            </span>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4 mb-3">
+                            <div class="bg-blue-50 rounded-lg p-2 text-center">
+                                <div class="text-lg font-bold text-blue-500">${user.completed_tasks || 0}/4</div>
+                                <div class="text-xs text-gray-500">已完成任务</div>
+                            </div>
+                            <div class="bg-green-50 rounded-lg p-2 text-center">
+                                <div class="text-lg font-bold text-green-500">阶段 ${user.experiment_phase || 1}</div>
+                                <div class="text-xs text-gray-500">当前阶段</div>
+                            </div>
+                        </div>
+
+                        <div class="flex space-x-2">
+                            <button class="view-user-details flex-1 bg-blue-500 text-white py-2 rounded-lg text-sm hover:bg-blue-600 transition-colors" data-user-id="${user.id}">
+                                <i class="fa fa-eye mr-1"></i>查看详情
+                            </button>
+                            <button class="edit-user-progress flex-1 bg-green-500 text-white py-2 rounded-lg text-sm hover:bg-green-600 transition-colors" data-user-id="${user.id}">
+                                <i class="fa fa-edit mr-1"></i>修改进度
+                            </button>
+                        </div>
+                    `;
+
+                    this.elements.userList.appendChild(userDiv);
+                });
+
+                // 添加查看详情和修改进度的事件监听
+                this.attachAdminEventListeners();
+            }
+
+            attachAdminEventListeners() {
+                // 查看用户详情
+                document.querySelectorAll('.view-user-details').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const userId = e.target.closest('button').dataset.userId;
+                        this.viewUserDetails(userId);
+                    });
+                });
+
+                // 修改用户进度
+                document.querySelectorAll('.edit-user-progress').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const userId = e.target.closest('button').dataset.userId;
+                        this.editUserProgress(userId);
+                    });
+                });
+            }
+
+            async viewUserDetails(userId) {
+                try {
+                    const response = await ApiService.adminGetUser(userId);
+                    if (response.success) {
+                        const user = response.data;
+                        this.showUserDetailsModal(user);
+                    }
+                } catch (error) {
+                    this.showNotification('获取用户详情失败');
+                }
+            }
+
+            async editUserProgress(userId) {
+                try {
+                    const response = await ApiService.adminGetUser(userId);
+                    if (response.success) {
+                        const user = response.data;
+                        // 显示修改进度模态框
+                        const newPhase = prompt(`修改 ${user.name} 的实验进度 (1-4):`, user.experiment_phase || 1);
+                        if (newPhase && newPhase >= 1 && newPhase <= 4) {
+                            await this.updateUserProgress(user.id, parseInt(newPhase));
+                        }
+                    }
+                } catch (error) {
+                    this.showNotification('获取用户信息失败');
+                }
+            }
+
+            async updateUserProgress(userId, newPhase) {
+                try {
+                    const response = await ApiService.adminUpdateUserProgress(userId, {
+                        experiment_phase: newPhase
+                    });
+                    if (response.success) {
+                        this.showNotification('用户进度更新成功');
+                        // 刷新用户列表
+                        await this.appState.loadAllUsers();
+                        this.renderUserList();
+                    }
+                } catch (error) {
+                    this.showNotification('更新用户进度失败');
+                }
+            }
+
+            showUserDetailsModal(user) {
+                if (!this.elements.userDetailsModal) return;
+
+                // 更新用户基本信息
+                if (this.elements.detailUserName) this.elements.detailUserName.textContent = user.name;
+                if (this.elements.detailUsername) this.elements.detailUsername.textContent = user.username;
+                if (this.elements.detailAge) this.elements.detailAge.textContent = user.age;
+                if (this.elements.detailGender) this.elements.detailGender.textContent = user.gender === 'male' ? '男' : user.gender === 'female' ? '女' : '其他';
+                if (this.elements.detailMemoryGroup) {
+                    const memoryBadge = this.appState.getMemoryGroupBadge(user.memory_group);
+                    this.elements.detailMemoryGroup.textContent = memoryBadge.text;
+                    this.elements.detailMemoryGroup.className = `memory-badge ${memoryBadge.class}`;
+                }
+
+                // 更新实验进度
+                const completedTasks = user.completed_tasks || 0;
+                const progressPercentage = (completedTasks / 4) * 100;
+                if (this.elements.detailCompletedTasks) this.elements.detailCompletedTasks.textContent = `${completedTasks}/4`;
+                if (this.elements.detailProgressFill) this.elements.detailProgressFill.style.width = `${progressPercentage}%`;
+                if (this.elements.detailExperimentPhase) this.elements.detailExperimentPhase.textContent = `阶段 ${user.experiment_phase || 1}`;
+                if (this.elements.detailTotalMessages) this.elements.detailTotalMessages.textContent = user.total_messages || 0;
+
+                // 显示模态框
+                this.elements.userDetailsModal.classList.remove('hidden');
+            }
+
+            hideUserDetails() {
+                if (this.elements.userDetailsModal) {
+                    this.elements.userDetailsModal.classList.add('hidden');
+                }
+            }
+
+            // 任务管理
+            async startTask() {
+                if (!this.appState.currentUser) {
+                    this.showNotification('请先登录');
+                    return;
+                }
+
+                if (!this.appState.hasCurrentTask()) {
+                    if (this.appState.isAllTasksCompleted()) {
+                        this.showNotification('所有任务已完成，感谢参与实验！');
+                    } else {
+                        this.showNotification('无法获取当前任务，请刷新页面重试');
+                    }
+                    return;
+                }
+
+                this.appState.isTaskActive = true;
+                this.appState.messageCount = 0;
+
+                // 启用聊天功能
+                if (this.elements.messageInput) this.elements.messageInput.disabled = false;
+                if (this.elements.sendBtn) this.elements.sendBtn.disabled = false;
+                if (this.elements.startTaskBtn) {
+                    this.elements.startTaskBtn.disabled = true;
+                    this.elements.startTaskBtn.classList.add('hidden');
+                }
+                if (this.elements.completeTaskBtn) this.elements.completeTaskBtn.classList.remove('hidden');
+                if (this.elements.conversationCount) this.elements.conversationCount.classList.remove('hidden');
+
+                // 清空聊天记录并显示欢迎消息
+                if (this.elements.chatContainer) {
+                    this.elements.chatContainer.innerHTML = '';
+                }
+                this.addWelcomeMessage();
+
+                // 开始计时器
+                this.startConversationTimer();
+
+                this.showNotification('任务已开始，请与AI进行对话');
+            }
+
+            addWelcomeMessage() {
+                const task = this.appState.currentTask;
+                if (!task) return;
+
+                let welcomeMessage = '';
+                switch(task.id) {
+                    case 1:
+                        welcomeMessage = `欢迎参与实验！我是您的AI助手。在这个阶段，我们将进行开放式交流，您可以向我介绍自己，分享您的兴趣爱好、工作学习生活，或者任何您想聊的话题。`;
+                        break;
+                    case 2:
+                        welcomeMessage = `很高兴再次见到您！让我们继续交流。您可以聊聊过去几天的情况，或者询问我是否记得之前您提到的事情。`;
+                        break;
+                    case 3:
+                        welcomeMessage = `您好！现在我们来处理一个具体的任务：${task.description}。请告诉我您的想法，我会为您提供个性化的建议。`;
+                        break;
+                    case 4:
+                        welcomeMessage = `这是我们最后一次对话。您可以自由地与我交流任何话题，回顾整个实验过程，分享您的感受。`;
+                        break;
+                }
+
+                this.addMessageToChat(welcomeMessage, false);
+            }
+
+            // 聊天功能
+            async sendMessage() {
+                if (!this.elements.messageInput) return;
+
+                const message = this.elements.messageInput.value.trim();
+                if (!message || !this.appState.isTaskActive) return;
+
+                // 添加用户消息
+                this.addMessageToChat(message, true);
+                this.elements.messageInput.value = '';
+                if (this.elements.characterCount) {
+                    this.elements.characterCount.textContent = '0/500';
+                }
+                if (this.elements.sendBtn) {
+                    this.elements.sendBtn.disabled = true;
+                }
+                this.appState.messageCount++;
+
+                // 保存用户消息
+                try {
+                    await ApiService.saveChatMessage(
+                        this.appState.currentTaskId,
+                        message,
+                        true
+                    );
+                } catch (error) {
+                    console.error('保存用户消息失败:', error);
+                }
+
+                // 显示输入指示器
+                this.showTypingIndicator();
+
+                try {
+                    // 获取AI回复
+                    const response = await ApiService.getAIResponse(
+                        this.appState.currentTaskId,
+                        message,
+                        'high'
+                    );
+
+                    this.hideTypingIndicator();
+
+                    if (response.success) {
+                        this.addMessageToChat(response.data.message, false);
+                        this.appState.messageCount++;
+                    } else {
+                        this.addMessageToChat('抱歉，我暂时无法回复。请稍后再试。', false);
+                    }
+                } catch (error) {
+                    console.error('发送消息失败:', error);
+                    this.hideTypingIndicator();
+                    this.addMessageToChat('网络错误，请检查连接后重试。', false);
+                }
+            }
+
+            addMessageToChat(content, isUser) {
+                if (!this.elements.chatContainer) return;
+
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `${isUser ? 'chat-bubble-user' : 'chat-bubble-ai'} animate-fade-in`;
+
+                messageDiv.innerHTML = `
+                    <div class="flex items-start space-x-3">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 rounded-full ${isUser ? 'bg-blue-500' : 'bg-gray-300'} flex items-center justify-center">
+                                <i class="fa ${isUser ? 'fa-user text-white' : 'fa-robot text-gray-600'} text-sm"></i>
+                            </div>
+                        </div>
+                        <div class="flex-1">
+                            <div class="text-sm font-medium mb-1">${isUser ? '您' : 'AI助手'}</div>
+                            <div class="text-sm">${content}</div>
+                        </div>
+                    </div>
+                `;
+
+                this.elements.chatContainer.appendChild(messageDiv);
+                this.elements.chatContainer.scrollTop = this.elements.chatContainer.scrollHeight;
+
+                // 更新消息计数
+                if (this.elements.messageCount) {
+                    this.elements.messageCount.textContent = this.appState.messageCount;
+                }
+            }
+
+            showTypingIndicator() {
+                if (!this.elements.chatContainer) return;
+
+                const indicator = document.createElement('div');
+                indicator.className = 'chat-bubble-ai typing-indicator';
+                indicator.id = 'typing-indicator';
+                indicator.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
+                            <i class="fa fa-robot text-gray-600 text-sm"></i>
+                        </div>
+                        <div class="flex-1">
+                            <div class="text-sm font-medium mb-1">AI助手</div>
+                            <div class="typing-indicator">
+                                <span></span><span></span><span></span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                this.elements.chatContainer.appendChild(indicator);
+                this.elements.chatContainer.scrollTop = this.elements.chatContainer.scrollHeight;
+            }
+
+            hideTypingIndicator() {
+                const indicator = document.getElementById('typing-indicator');
+                if (indicator) indicator.remove();
+            }
+
+            // 计时器功能
+            startConversationTimer() {
+                this.appState.conversationTime = 15 * 60; // 15分钟
+                this.updateTimerDisplay();
+
+                this.appState.conversationTimer = setInterval(() => {
+                    this.appState.conversationTime--;
+                    this.updateTimerDisplay();
+
+                    if (this.appState.conversationTime <= 0) {
+                        this.endConversationTimer();
+                        this.showNotification('对话时间已结束，请完成任务');
+                    }
+                }, 1000);
+
+                if (this.elements.taskTimer) {
+                    this.elements.taskTimer.classList.remove('hidden');
+                }
+            }
+
+            updateTimerDisplay() {
+                if (!this.elements.timerDisplay) return;
+
+                const minutes = Math.floor(this.appState.conversationTime / 60);
+                const seconds = this.appState.conversationTime % 60;
+                this.elements.timerDisplay.textContent =
+                    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+
+            endConversationTimer() {
+                if (this.appState.conversationTimer) {
+                    clearInterval(this.appState.conversationTimer);
+                    this.appState.conversationTimer = null;
+                }
+            }
+
+            updateTaskInfo() {
+                if (this.appState.hasCurrentTask() && this.elements.taskInfoContent) {
+                    const task = this.appState.currentTask;
+
+                    this.elements.taskInfoContent.innerHTML = `
+                        <div class="space-y-4">
+                            <div>
+                                <h3 class="font-semibold text-lg text-blue-500">${task.title}</h3>
+                                <p class="text-sm text-gray-500 mt-1">${task.description}</p>
+                            </div>
+                            <div class="bg-gray-50 rounded-lg p-4">
+                                <h4 class="font-medium text-sm text-gray-500 mb-2">任务指导</h4>
+                                <p class="text-sm">${task.content}</p>
+                            </div>
+                            <div class="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                                <div class="flex items-center text-blue-700">
+                                    <i class="fa fa-info-circle mr-2"></i>
+                                    <span class="text-sm">实验阶段: 第${task.time_point}天</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    if (this.elements.taskPhase) {
+                        this.elements.taskPhase.textContent = `阶段 ${task.id}`;
+                        this.elements.taskPhase.className = `experiment-phase phase-${task.id}`;
+                    }
+
+                    if (this.elements.aiDescription) {
+                        this.elements.aiDescription.textContent = `当前任务: ${task.title}`;
+                    }
+
+                    // 启用开始任务按钮
+                    if (this.elements.startTaskBtn) {
+                        this.elements.startTaskBtn.disabled = false;
+                    }
+                } else if (this.appState.isAllTasksCompleted()) {
+                    this.elements.taskInfoContent.innerHTML = `
+                        <div class="text-center py-8">
+                            <div class="w-16 h-16 bg-green-500 bg-opacity-10 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <i class="fa fa-check text-green-500 text-2xl"></i>
+                            </div>
+                            <h3 class="text-lg font-semibold text-green-500 mb-2">实验完成</h3>
+                            <p class="text-gray-500">恭喜您已完成所有实验任务！感谢您的参与。</p>
+                        </div>
+                    `;
+                    if (this.elements.startTaskBtn) {
+                        this.elements.startTaskBtn.disabled = true;
+                        this.elements.startTaskBtn.textContent = '所有任务已完成';
+                    }
+                } else {
+                    this.elements.taskInfoContent.innerHTML = `
+                        <div class="text-center text-gray-500 py-8">
+                            <i class="fa fa-exclamation-circle text-3xl mb-3 text-blue-500 opacity-50"></i>
+                            <p>无法加载当前任务</p>
+                        </div>
+                    `;
+                    if (this.elements.startTaskBtn) {
+                        this.elements.startTaskBtn.disabled = true;
+                    }
+                }
+            }
+
+            updateProgress() {
+                const completed = this.appState.getCompletedTasksCount();
+                const percentage = this.appState.getProgressPercentage();
+
+                if (this.elements.progressText) {
+                    this.elements.progressText.textContent = `${completed}/4 次对话`;
+                }
+                if (this.elements.progressFill) {
+                    this.elements.progressFill.style.width = `${percentage}%`;
+                }
+            }
+
+            resetChat() {
+                this.appState.isTaskActive = false;
+                this.appState.messageCount = 0;
+
+                if (this.elements.chatContainer) {
+                    this.elements.chatContainer.innerHTML = `
+                        <div class="text-center py-12">
+                            <div class="w-16 h-16 bg-blue-500 bg-opacity-10 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <i class="fa fa-comments text-blue-500 text-2xl"></i>
+                            </div>
+                            <h3 class="text-lg font-semibold text-blue-500 mb-2">准备开始对话</h3>
+                            <p class="text-gray-500 max-w-md mx-auto">请点击"开始当前任务"按钮与AI助手开始对话。</p>
+                        </div>
+                    `;
+                }
+
+                if (this.elements.messageInput) this.elements.messageInput.disabled = true;
+                if (this.elements.sendBtn) this.elements.sendBtn.disabled = true;
+                if (this.elements.startTaskBtn) {
+                    this.elements.startTaskBtn.disabled = false;
+                    this.elements.startTaskBtn.classList.remove('hidden');
+                }
+                if (this.elements.completeTaskBtn) this.elements.completeTaskBtn.classList.add('hidden');
+                if (this.elements.conversationCount) this.elements.conversationCount.classList.add('hidden');
+
+                this.endConversationTimer();
+                if (this.elements.taskTimer) this.elements.taskTimer.classList.add('hidden');
+            }
+
+            // 历史记录
+            async showHistory() {
+                if (!this.appState.currentUser) {
+                    this.showNotification('请先登录');
+                    return;
+                }
+
+                try {
+                    // 加载任务历史
+                    const taskHistory = await ApiService.getTaskHistory();
+                    this.renderTaskHistory(taskHistory.data || []);
+
+                    if (this.elements.historyModal) {
+                        this.elements.historyModal.classList.remove('hidden');
+                    }
+                } catch (error) {
+                    console.error('加载历史记录失败:', error);
+                    this.showNotification('加载历史记录失败');
+                }
+            }
+
+            hideHistory() {
+                if (this.elements.historyModal) {
+                    this.elements.historyModal.classList.add('hidden');
+                }
+            }
+
+            renderTaskHistory(history) {
+                if (!this.elements.taskHistoryList) return;
+
+                this.elements.taskHistoryList.innerHTML = '';
+
+                if (history.length === 0) {
+                    this.elements.taskHistoryList.innerHTML = `
+                        <div class="text-center py-4 text-gray-500">
+                            <i class="fa fa-inbox text-2xl mb-2 opacity-50"></i>
+                            <p>暂无任务记录</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                history.forEach(item => {
+                    const taskDiv = document.createElement('div');
+                    taskDiv.className = 'border rounded-lg p-3 hover:bg-gray-50 transition-colors';
+
+                    taskDiv.innerHTML = `
+                        <div class="flex justify-between items-start mb-2">
+                            <h5 class="font-medium text-blue-500">任务${item.taskId}: ${item.title}</h5>
+                            <span class="text-xs px-2 py-1 rounded-full ${item.submitted ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
+                                ${item.submitted ? '已完成' : '进行中'}
+                            </span>
+                        </div>
+                        <p class="text-sm text-gray-500 mb-2">${item.description}</p>
+                        <div class="text-xs text-gray-500 flex justify-between">
+                            <span>最后更新: ${new Date(item.document.timestamp).toLocaleDateString()}</span>
+                            <span>${item.document.submitted ? '已提交' : '未提交'}</span>
+                        </div>
+                    `;
+
+                    this.elements.taskHistoryList.appendChild(taskDiv);
+                });
+            }
+
+            // 问卷功能
+            showSurvey() {
+                if (!this.appState.isTaskActive) {
+                    this.showNotification('请先开始任务');
+                    return;
+                }
+
+                if (this.elements.surveyModal) {
+                    this.elements.surveyModal.classList.remove('hidden');
+                }
+            }
+
+            hideSurvey() {
+                if (this.elements.surveyModal) {
+                    this.elements.surveyModal.classList.add('hidden');
+                }
+            }
+
+            async submitSurvey() {
+                try {
+                    // 收集问卷数据
+                    const questionnaireData = {
+                        mind_perception: {
+                            q1: document.querySelector('.mind-perception-q1')?.value || '3',
+                            q2: document.querySelector('.mind-perception-q2')?.value || '3'
+                        },
+                        intimacy: {
+                            q1: document.querySelector('.intimacy-q1')?.value || '3'
+                        },
+                        trust: {
+                            q1: document.querySelector('.trust-q1')?.value || '3'
+                        }
+                    };
+
+                    // 提交任务
+                    await ApiService.submitTask(
+                        this.appState.currentTaskId,
+                        questionnaireData
+                    );
+
+                    this.hideSurvey();
+                    this.resetChat();
+
+                    // 重新加载当前任务（会自动进入下一个任务）
+                    await this.appState.loadCurrentTask();
+                    this.updateTaskInfo();
+                    this.updateProgress();
+
+                    this.showNotification('任务已完成，问卷已提交');
+
+                } catch (error) {
+                    console.error('提交任务失败:', error);
+                    this.showNotification('提交失败，请重试');
+                }
+            }
+
+            // 工具方法
+            showNotification(message) {
+                if (!this.elements.notificationToast || !this.elements.notificationText) return;
+
+                this.elements.notificationText.textContent = message;
+                this.elements.notificationToast.classList.remove('translate-y-20', 'opacity-0');
+                this.elements.notificationToast.classList.add('translate-y-0', 'opacity-100');
+
+                setTimeout(() => {
+                    this.elements.notificationToast.classList.add('translate-y-20', 'opacity-0');
+                    this.elements.notificationToast.classList.remove('translate-y-0', 'opacity-100');
+                }, 3000);
+            }
+
+            hideModal(modal) {
+                if (modal) {
+                    modal.classList.add('hidden');
+                }
+            }
+        }
+
+        // 应用控制器
+        class AppController {
+            constructor() {
+                this.appState = new AppState();
+                this.uiManager = new UIManager(this.appState);
+            }
+
+            async initialize() {
+                await this.appState.initialize();
+                if (this.uiManager.elements) {
+                    await this.uiManager.initializeUI();
+                }
+
+                // 根据登录状态更新UI
+                if (this.appState.isLoggedIn()) {
+                    await this.uiManager.updateUIAfterLogin();
+                } else {
+                    this.uiManager.updateUIAfterLogout();
+                }
+
+                console.log('AI记忆能力实验平台初始化完成');
+            }
+        }
+
+        // 初始化应用
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const appController = new AppController();
+                await appController.initialize();
+
+                // 将控制器暴露给全局，便于调试
+                window.app = appController;
+            } catch (error) {
+                console.error('应用初始化失败:', error);
+            }
+        });
+    </script>
+</body>
+</html>
