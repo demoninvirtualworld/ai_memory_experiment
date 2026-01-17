@@ -668,7 +668,7 @@
     <script>
         // API服务
         const ApiService = {
-            baseURL: 'http://localhost:3000/api',
+            baseURL: '/api',
             sessionToken: localStorage.getItem('session_token'),
 
             async request(endpoint, options = {}) {

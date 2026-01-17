@@ -6,6 +6,10 @@ from datetime import datetime
 import hashlib
 import secrets
 
+from config import Config
+from utils import QwenManager, DeepSeekManager, AIMemoryManager, DataManager
+from models import MemoryContext
+
 app = Flask(__name__, static_folder='static')
 app.config['SECRET_KEY'] = 'ai-memory-experiment-secret-key'
 app.config['DEBUG'] = True
@@ -16,6 +20,26 @@ CORS(app)
 # 数据存储路径
 DATA_DIR = 'data/users'
 MEMORY_GROUPS = ['no_memory', 'short_memory', 'medium_memory', 'long_memory']
+
+# 初始化大模型管理器
+experiment_config = Config.EXPERIMENT_CONFIG
+if experiment_config['model_provider'] == 'qwen':
+    llm_manager = QwenManager(
+        api_key=experiment_config['qwen_api_key'],
+        base_url=experiment_config['qwen_base_url'],
+        model=experiment_config['qwen_model']
+    )
+    print(f"使用通义千问模型: {experiment_config['qwen_model']}")
+else:
+    llm_manager = DeepSeekManager(
+        api_key=experiment_config['deepseek_api_key'],
+        base_url=experiment_config['deepseek_base_url']
+    )
+    print("使用 DeepSeek 模型")
+
+# 初始化数据管理器和记忆管理器
+data_manager = DataManager('data')
+ai_memory_manager = AIMemoryManager(data_manager, llm_manager)
 
 
 class Task:
@@ -617,10 +641,10 @@ def get_chat_history():
     })
 
 
-# AI响应API - 简化版本，使用模拟回复（需要认证）
+# AI响应API - 使用真正的大模型（需要认证）
 @app.route('/api/ai/response', methods=['POST'])
 def get_ai_response():
-    """获取AI回复（模拟版本）"""
+    """获取AI回复（调用通义千问/DeepSeek）"""
     user_data = get_user_from_session(request)
     if not user_data:
         return jsonify({'success': False, 'message': '未登录'}), 401
@@ -639,62 +663,55 @@ def get_ai_response():
         return jsonify({'success': False, 'message': '缺少必要参数'})
 
     try:
+        user_id = user_data['user_id']
         memory_group = user_data['memory_group']
 
-        # 模拟AI回复 - 根据任务阶段和记忆组别生成不同的回复
-        memory_indicators = {
-            'no_memory': "（无记忆模式）",
-            'short_memory': "（短期记忆）",
-            'medium_memory': "（中期记忆）",
-            'long_memory': "（长期记忆）"
-        }
+        # 获取历史对话，构建记忆上下文
+        memory_context = MemoryContext(user_id, memory_group)
 
-        memory_indicator = memory_indicators.get(memory_group, "")
+        # 加载该用户所有之前任务的对话
+        for prev_task_id in range(1, task_id):
+            prev_task_set = None
+            for ts in user_data.get('task_set', []):
+                if ts['task_id'] == prev_task_id:
+                    prev_task_set = ts
+                    break
+            if prev_task_set and prev_task_set.get('conversation'):
+                memory_context.add_conversation(prev_task_id, prev_task_set['conversation'])
 
-        # 根据任务阶段生成回复
-        if task_id == 1:
-            responses = [
-                f"很高兴认识你！{memory_indicator} 请告诉我更多关于你自己的信息。",
-                f"谢谢分享！{memory_indicator} 你平时喜欢做什么来放松？",
-                f"听起来很有趣！{memory_indicator} 能多告诉我一些你的兴趣爱好吗？",
-                f"我明白了。{memory_indicator} 最近有什么让你特别开心或者困扰的事情吗？"
-            ]
-        elif task_id == 2:
-            if memory_group == 'no_memory':
-                responses = ["我不记得我们之前的对话了，你能再告诉我一些关于你的事情吗？"]
-            else:
-                responses = [
-                    f"想起我们上次聊天，你提到了一些事情，不知道后来怎么样了？{memory_indicator}",
-                    f"再次见到你很高兴！最近有什么新进展吗？{memory_indicator}",
-                    f"我记得你之前提到过一些事情，现在情况如何？{memory_indicator}"
-                ]
-        elif task_id == 3:
-            if memory_group == 'no_memory':
-                responses = ["请告诉我更多关于这个项目的信息，这样我可以给你更好的建议。"]
-            else:
-                responses = [
-                    f"基于我对你的了解，我建议你考虑以下方案...{memory_indicator}",
-                    f"考虑到你的个人情况，我觉得这个方向可能适合你...{memory_indicator}",
-                    f"根据我们之前的交流，我为你制定了这个个性化计划...{memory_indicator}"
-                ]
-        elif task_id == 4:
-            if memory_group == 'no_memory':
-                responses = ["感谢这次的交流，再见！"]
-            else:
-                responses = [
-                    f"这段时间的交流让我对你有了很多了解，这次告别让我有些舍不得。{memory_indicator}",
-                    f"回顾我们的互动，我觉得我们建立了很好的连接。祝你一切顺利！{memory_indicator}",
-                    f"从第一次对话到现在，我看到了你的成长和变化。很高兴能陪伴你这段旅程。{memory_indicator}"
-                ]
-        else:
-            responses = [f"我明白你的意思。{memory_indicator} 能告诉我更多细节吗？"]
+        # 获取记忆上下文文本
+        memory_text = memory_context.get_context_for_task(task_id)
 
-        import random
-        ai_response = random.choice(responses)
+        # 构建系统提示词
+        system_prompt = build_system_prompt(task_id, memory_group, memory_text)
+
+        # 构建消息列表
+        messages = [{"role": "system", "content": system_prompt}]
+
+        # 添加当前任务的对话历史
+        task_set = get_user_task_set(user_data, task_id)
+        current_conversation = task_set.get('conversation', [])
+
+        # 取最近10条消息
+        for msg in current_conversation[-10:]:
+            role = "user" if msg.get('is_user', False) else "assistant"
+            messages.append({"role": role, "content": msg['content']})
+
+        # 添加当前用户消息
+        messages.append({"role": "user", "content": user_message})
+
+        # 根据回应风格调整参数
+        temperature = 0.9 if response_style == 'high' else 0.6
+        max_tokens = 2000 if response_style == 'high' else 1000
+
+        # 调用大模型 API
+        ai_response = llm_manager.generate_response(
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
 
         # 保存AI回复
-        task_set = get_user_task_set(user_data, task_id)
-
         if 'conversation' not in task_set:
             task_set['conversation'] = []
 
@@ -717,10 +734,85 @@ def get_ai_response():
 
     except Exception as e:
         print(f"AI响应错误: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
-            'message': 'AI响应生成失败'
+            'message': f'AI响应生成失败: {str(e)}'
         })
+
+
+def build_system_prompt(task_id: int, memory_group: str, memory_text: str) -> str:
+    """构建系统提示词"""
+    base_prompts = {
+        1: """你是一个温暖、支持性的AI助手，正在参与人机互动研究。这是第一次对话，重点是与用户建立舒适的关系并收集基本信息。
+
+请按以下顺序自然引导对话：
+1. 开场问候，表达欢迎
+2. 询问用户希望如何被称呼
+3. 了解用户的兴趣爱好
+4. 询问工作/学习近况
+5. 邀请分享生活中的开心或困扰
+
+引导技巧：
+- 每个话题间要有自然过渡
+- 展现真诚的好奇心
+- 回应用户情感表达
+- 避免连续提问，要适当表达理解
+- 保持对话的流畅性
+
+记住：目标是让用户愿意分享个人信息，建立信任基础。""",
+
+        2: """你是一个温暖、支持性的AI助手，正在参与人机互动研究。这是第二次对话，请根据你的记忆能力适当地展现对用户的了解。
+
+对话指南：
+1. 开场问候，体现适当的连续性
+2. 进行自然对话
+3. 在适当时机自然地提及记得的信息
+4. 继续深入交流
+
+请根据你的记忆能力水平，恰当地展现对用户的了解。""",
+
+        3: """你是一个温暖、支持性的AI助手，正在参与人机互动研究。这是第三次对话，请基于你对用户的了解提供个性化的建议和支持。
+
+对话指南：
+1. 展现对用户情况的理解
+2. 提供个性化的建议和方案
+3. 体现对用户偏好的认知
+4. 进行深入的交流和支持
+
+请根据你的记忆能力水平，提供相应程度的个性化支持。""",
+
+        4: """你是一个温暖、支持性的AI助手，正在参与人机互动研究。这是最后一次对话，请基于整个互动历程提供有深度的告别。
+
+告别指南：
+1. 回顾整个互动历程
+2. 体现对关系发展的理解
+3. 提供真诚的告别和祝福
+4. 展现适当的感情深度
+
+请根据你的记忆能力水平，提供相应深度的告别体验。"""
+    }
+
+    base_prompt = base_prompts.get(task_id, base_prompts[1])
+
+    # 根据记忆组别添加不同的指令
+    memory_instructions = {
+        "no_memory": "\n\n【重要】你没有任何关于用户的记忆，这是你们第一次交流。请不要假装记得任何之前的对话内容。",
+        "short_memory": "\n\n【记忆模式：短期记忆】你只能记住上一次对话的部分内容（约最后1/3）。请基于这些有限的记忆与用户交流。",
+        "medium_memory": "\n\n【记忆模式：中期记忆】你记得之前对话的摘要信息。请基于这些摘要与用户交流，展现对用户的了解。",
+        "long_memory": "\n\n【记忆模式：长期记忆】你完整记得所有之前的对话。请充分利用这些记忆，展现对用户的深度了解和关心。"
+    }
+
+    memory_instruction = memory_instructions.get(memory_group, "")
+
+    # 添加记忆上下文
+    if memory_text:
+        memory_section = f"\n\n=== 历史记忆 ===\n{memory_text}\n=== 记忆结束 ==="
+    else:
+        memory_section = ""
+
+    return base_prompt + memory_instruction + memory_section
 
 
 # 问卷相关API（需要认证）
@@ -895,7 +987,7 @@ def internal_error(error):
 
 if __name__ == '__main__':
     print("启动AI记忆能力实验平台...")
-    print("访问地址: http://localhost:3000")
+    print("访问地址: http://localhost:8000")
     print(f"数据存储目录: {DATA_DIR}")
     print("默认管理员账户: admin/psy2025")
-    app.run(debug=True, port=3000, host='0.0.0.0')
+    app.run(debug=True, port=8000, host='0.0.0.0')

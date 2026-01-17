@@ -147,7 +147,15 @@ class QuestionnaireResponse:
 
 
 class MemoryContext:
-    """记忆上下文管理"""
+    """
+    记忆上下文管理
+
+    四种记忆水平：
+    1. no_memory: 无记忆 - 不传递任何历史信息
+    2. short_memory: 短期记忆 - 仅记住上一次对话的后1/3内容
+    3. medium_memory: 中期记忆 - 记住所有历史对话的摘要
+    4. long_memory: 长期记忆 - 完整记住所有历史对话
+    """
 
     def __init__(self, user_id: str, memory_group: str):
         self.user_id = user_id
@@ -163,7 +171,15 @@ class MemoryContext:
         })
 
     def get_context_for_task(self, current_task_id: int, max_tokens: int = 128000):
-        """获取当前任务的记忆上下文"""
+        """
+        获取当前任务的记忆上下文
+
+        根据不同的记忆组别返回不同级别的历史信息：
+        - no_memory: 空字符串
+        - short_memory: 上一次对话的后1/3
+        - medium_memory: 所有历史对话的摘要
+        - long_memory: 完整历史对话
+        """
         if self.memory_group == "no_memory":
             return self._get_no_memory_context()
         elif self.memory_group == "short_memory":
@@ -176,62 +192,88 @@ class MemoryContext:
             return ""
 
     def _get_no_memory_context(self):
-        """无记忆组上下文"""
+        """
+        无记忆组：不返回任何历史上下文
+        AI 将表现得像每次都是第一次见面
+        """
         return ""
 
     def _get_short_memory_context(self, current_task_id: int, max_tokens: int):
-        """短记忆组上下文"""
+        """
+        短期记忆组：仅记住上一次对话的后1/3内容
+
+        模拟人类的短期记忆特性：
+        - 只记得最近的交互
+        - 记忆内容有限且容易遗忘
+        """
         if current_task_id <= 1:
             return ""
 
+        # 只获取上一次对话
         previous_task_id = current_task_id - 1
         previous_conversation = self._get_conversation_by_task_id(previous_task_id)
 
         if not previous_conversation:
             return ""
 
-        # 取后1/3的对话
+        # 取后1/3的对话（模拟近因效应）
         conversation_text = self._conversation_to_text(previous_conversation)
         lines = conversation_text.split('\n')
+
         if len(lines) <= 3:
-            return conversation_text
+            short_context = conversation_text
+        else:
+            start_index = len(lines) * 2 // 3
+            short_context = '\n'.join(lines[start_index:])
 
-        start_index = len(lines) * 2 // 3
-        short_context = '\n'.join(lines[start_index:])
-
-        return self._truncate_to_tokens(short_context, max_tokens)
+        return f"【上次对话片段（仅记得部分内容）】\n{self._truncate_to_tokens(short_context, max_tokens)}"
 
     def _get_medium_memory_context(self, current_task_id: int, max_tokens: int):
-        """中记忆组上下文"""
+        """
+        中期记忆组：记住所有历史对话的摘要
+
+        模拟人类的中期记忆特性：
+        - 记得发生过什么事
+        - 但细节可能模糊
+        - 保留关键信息和情感印象
+        """
         previous_tasks = [task for task in self.conversation_history if task['task_id'] < current_task_id]
 
         if not previous_tasks:
             return ""
 
-        # 生成摘要
+        # 生成每次对话的摘要
         summaries = []
-        for task_data in previous_tasks:
+        for task_data in sorted(previous_tasks, key=lambda x: x['task_id']):
             conversation_text = self._conversation_to_text(task_data['conversation'])
             summary = self._generate_conversation_summary(conversation_text, task_data['task_id'])
             summaries.append(summary)
 
         full_summary = "\n\n".join(summaries)
-        return self._truncate_to_tokens(full_summary, max_tokens)
+        return f"【历史对话摘要】\n{self._truncate_to_tokens(full_summary, max_tokens)}"
 
     def _get_long_memory_context(self, current_task_id: int, max_tokens: int):
-        """长记忆组上下文"""
+        """
+        长期记忆组：完整记住所有历史对话
+
+        模拟理想的长期记忆：
+        - 完整保留所有对话内容
+        - 能够准确回忆细节
+        - 建立深度的用户理解
+        """
         previous_tasks = [task for task in self.conversation_history if task['task_id'] < current_task_id]
 
         if not previous_tasks:
             return ""
 
         full_history = []
-        for task_data in previous_tasks:
+        for task_data in sorted(previous_tasks, key=lambda x: x['task_id']):
             conversation_text = self._conversation_to_text(task_data['conversation'])
-            full_history.append(f"第{task_data['task_id']}次对话：\n{conversation_text}")
+            task_header = f"=== 第{task_data['task_id']}次对话（完整记录）==="
+            full_history.append(f"{task_header}\n{conversation_text}")
 
         combined_history = "\n\n".join(full_history)
-        return self._truncate_to_tokens(combined_history, max_tokens)
+        return f"【完整历史对话记录】\n{self._truncate_to_tokens(combined_history, max_tokens)}"
 
     def _get_conversation_by_task_id(self, task_id: int):
         """根据任务ID获取对话"""
@@ -245,26 +287,44 @@ class MemoryContext:
         lines = []
         for msg in conversation:
             role = "用户" if msg.get('is_user', False) else "AI助手"
-            lines.append(f"{role}：{msg.get('content', '')}")
+            content = msg.get('content', '')
+            lines.append(f"{role}：{content}")
         return "\n".join(lines)
 
     def _generate_conversation_summary(self, conversation: str, task_id: int):
-        """生成对话摘要"""
-        # 在实际实现中，这里应该调用大模型生成真正的摘要
-        # 这里简化为提取关键信息
+        """
+        生成对话摘要
+
+        提取关键信息：
+        - 用户的自我介绍
+        - 重要的个人信息
+        - 情感表达
+        - 讨论的主要话题
+        """
         lines = conversation.split('\n')
-        key_lines = [line for line in lines if len(line.strip()) > 10]
+        user_lines = [line for line in lines if line.startswith('用户：')]
 
-        if len(key_lines) > 5:
-            summary_lines = key_lines[:3] + ["..."] + key_lines[-2:]
-        else:
-            summary_lines = key_lines
+        # 提取用户说的关键内容
+        key_info = []
+        for line in user_lines:
+            content = line.replace('用户：', '').strip()
+            if len(content) > 5:  # 过滤太短的内容
+                key_info.append(f"  - {content[:100]}{'...' if len(content) > 100 else ''}")
 
-        return f"第{task_id}次对话摘要：\n" + "\n".join(summary_lines)
+        if len(key_info) > 8:
+            # 保留开头和结尾的关键信息
+            key_info = key_info[:4] + ["  - ...（中间内容省略）..."] + key_info[-3:]
+
+        summary = f"第{task_id}次对话要点：\n" + "\n".join(key_info) if key_info else f"第{task_id}次对话：（无有效内容）"
+        return summary
 
     def _truncate_to_tokens(self, text: str, max_tokens: int):
-        """截断文本到指定token数（简化版，按字符估算）"""
-        # 简单估算：中文字符大致按1.5个token计算
+        """
+        截断文本到指定token数
+
+        简化估算：中文字符约1.5个token
+        """
+        # 简单估算
         estimated_tokens = len(text) * 1.5
 
         if estimated_tokens <= max_tokens:
@@ -272,4 +332,4 @@ class MemoryContext:
 
         # 截取前max_tokens/1.5个字符
         max_chars = int(max_tokens / 1.5)
-        return text[:max_chars] + "...（内容已截断）"
+        return text[:max_chars] + "\n...（内容已截断）"
