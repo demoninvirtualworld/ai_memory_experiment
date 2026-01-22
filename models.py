@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Dict, List, Any
 
 
+
 class User:
     def __init__(self, user_id: str, name: str, memory_group: str):
         self.id = user_id

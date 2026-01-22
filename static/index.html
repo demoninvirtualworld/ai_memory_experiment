@@ -28,8 +28,9 @@
             color: white;
             border-radius: 1rem;
             border-top-right-radius: 0;
-            padding: 1rem;
-            max-width: 80%;
+            padding: 0.75rem 1rem;
+            max-width: 75%;
+            width: fit-content;
             margin-left: auto;
             box-shadow: 0 1px 2px rgba(0,0,0,0.1);
         }
@@ -39,8 +40,9 @@
             color: #1E293B;
             border-radius: 1rem;
             border-top-left-radius: 0;
-            padding: 1rem;
-            max-width: 80%;
+            padding: 0.75rem 1rem;
+            max-width: 75%;
+            width: fit-content;
             margin-right: auto;
             box-shadow: 0 1px 2px rgba(0,0,0,0.1);
         }
@@ -668,7 +670,7 @@
     <script>
         // API服务
         const ApiService = {
-            baseURL: 'http://localhost:3000/api',
+            baseURL: '/api',
             sessionToken: localStorage.getItem('session_token'),
 
             async request(endpoint, options = {}) {
@@ -1505,16 +1507,75 @@
                 if (this.elements.completeTaskBtn) this.elements.completeTaskBtn.classList.remove('hidden');
                 if (this.elements.conversationCount) this.elements.conversationCount.classList.remove('hidden');
 
-                // 清空聊天记录并显示欢迎消息
+                // 清空聊天容器
                 if (this.elements.chatContainer) {
                     this.elements.chatContainer.innerHTML = '';
                 }
-                this.addWelcomeMessage();
+
+                // 加载历史聊天记录
+                await this.loadChatHistory();
 
                 // 开始计时器
                 this.startConversationTimer();
 
                 this.showNotification('任务已开始，请与AI进行对话');
+            }
+
+            async loadChatHistory() {
+                const task = this.appState.currentTask;
+                console.log('[DEBUG] loadChatHistory called, task:', task);
+                if (!task) {
+                    console.log('[DEBUG] No task, showing welcome message');
+                    this.addWelcomeMessage();
+                    return;
+                }
+
+                try {
+                    // 获取当前任务的历史聊天记录
+                    console.log('[DEBUG] Fetching chat history for task:', task.id);
+                    const response = await ApiService.getTaskChats(task.id);
+                    console.log('[DEBUG] API response:', response);
+
+                    if (response.success && response.data && response.data.length > 0) {
+                        // 有历史记录，显示历史消息
+                        console.log(`[DEBUG] 加载了 ${response.data.length} 条历史消息`);
+
+                        // 显示历史消息提示
+                        this.addSystemMessage('--- 以下是之前的对话记录 ---');
+
+                        // 按时间顺序显示历史消息
+                        for (const msg of response.data) {
+                            this.addMessageToChat(msg.content, msg.is_user);
+                        }
+
+                        // 显示分隔线
+                        this.addSystemMessage('--- 继续对话 ---');
+
+                        // 更新消息计数
+                        this.appState.messageCount = response.data.filter(m => m.is_user).length;
+                        if (this.elements.messageCount) {
+                            this.elements.messageCount.textContent = this.appState.messageCount;
+                        }
+                    } else {
+                        // 没有历史记录，显示欢迎消息
+                        this.addWelcomeMessage();
+                    }
+                } catch (error) {
+                    console.error('加载聊天历史失败:', error);
+                    // 出错时显示欢迎消息
+                    this.addWelcomeMessage();
+                }
+            }
+
+            addSystemMessage(text) {
+                if (!this.elements.chatContainer) return;
+
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'text-center text-gray-400 text-sm my-4';
+                messageDiv.textContent = text;
+                this.elements.chatContainer.appendChild(messageDiv);
+                // 滚动到底部
+                this.elements.chatContainer.scrollTop = this.elements.chatContainer.scrollHeight;
             }
 
             addWelcomeMessage() {

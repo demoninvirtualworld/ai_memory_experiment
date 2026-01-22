@@ -229,6 +229,101 @@ class DataManager:
         return sorted(history, key=lambda x: x['taskId'])
 
 
+class QwenManager:
+    """通义千问 API 管理器"""
+
+    def __init__(self, api_key: str, base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                 model: str = "qwen-plus"):
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model = model
+        self.headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+
+    def generate_response(self, messages: List[Dict], max_tokens: int = 2000, temperature: float = 0.8) -> str:
+        """调用通义千问 API 生成回复"""
+        try:
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "stream": False
+            }
+
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                headers=self.headers,
+                json=payload,
+                timeout=60
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                return result['choices'][0]['message']['content']
+            else:
+                print(f"通义千问 API 错误: {response.status_code} - {response.text}")
+                return "抱歉，我暂时无法回复。请稍后再试。"
+
+        except Exception as e:
+            print(f"调用通义千问 API 失败: {e}")
+            return "网络错误，请检查连接后重试。"
+
+    def generate_summary(self, conversation: str, max_tokens: int = 1000) -> str:
+        """生成对话摘要"""
+        try:
+            system_prompt = """请为以下对话生成一个简洁的摘要，提取关键信息包括：
+1. 用户的基本信息（如姓名、兴趣、工作等）
+2. 用户提到的重要事件或情感
+3. 对话的主要话题和结论
+请用中文回复，保持客观准确。"""
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"请为以下对话生成摘要：\n\n{conversation}"}
+            ]
+
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": 0.3,
+                "stream": False
+            }
+
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                headers=self.headers,
+                json=payload,
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                return result['choices'][0]['message']['content']
+            else:
+                print(f"通义千问摘要生成错误: {response.status_code}")
+                return self._generate_fallback_summary(conversation)
+
+        except Exception as e:
+            print(f"生成摘要失败: {e}")
+            return self._generate_fallback_summary(conversation)
+
+    def _generate_fallback_summary(self, conversation: str) -> str:
+        """备用摘要生成"""
+        lines = conversation.split('\n')
+        user_lines = [line for line in lines if '用户：' in line]
+
+        if len(user_lines) > 5:
+            key_lines = user_lines[:3] + ["..."] + user_lines[-2:]
+        else:
+            key_lines = user_lines
+
+        return "对话摘要（自动生成）：\n" + "\n".join(key_lines)
+
+
 class DeepSeekManager:
     def __init__(self, api_key: str, base_url: str = "https://api.deepseek.com/v1"):
         self.api_key = api_key
@@ -322,9 +417,12 @@ class DeepSeekManager:
 
 
 class AIMemoryManager:
-    def __init__(self, data_manager: DataManager, deepseek_manager: DeepSeekManager):
+    def __init__(self, data_manager: DataManager, llm_manager):
+        """
+        llm_manager: 可以是 QwenManager 或 DeepSeekManager
+        """
         self.data_manager = data_manager
-        self.deepseek_manager = deepseek_manager
+        self.llm_manager = llm_manager
         self.memory_contexts = {}
 
     def get_memory_context(self, user_id: str, current_task_id: int) -> MemoryContext:
@@ -451,7 +549,7 @@ class AIMemoryManager:
             max_tokens = 2000 if response_style == 'high' else 1000
 
             # 调用DeepSeek API
-            response = self.deepseek_manager.generate_response(
+            response = self.llm_manager.generate_response(
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature
