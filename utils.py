@@ -5,7 +5,6 @@ from typing import List, Dict, Any
 from datetime import datetime
 from models import User, Task, Document, ChatMessage, QuestionnaireResponse, MemoryContext
 
-
 class DataManager:
     def __init__(self, data_dir='data'):
         self.data_dir = data_dir
@@ -388,17 +387,14 @@ class AIMemoryManager:
 - 回应用户情感表达
 - 避免连续提问，要适当表达理解
 - 保持对话的流畅性
-
 记住：目标是让用户愿意分享个人信息，建立信任基础。""",
 
             2: """你是一个温暖、支持性的AI助手，正在参与人机互动研究。这是第二次对话，请根据你的记忆能力适当地展现对用户的了解。
-
 对话指南：
 1. 开场问候，体现适当的连续性
 2. 进行自然对话
 3. 在适当时机自然地提及记得的信息
 4. 继续深入交流
-
 请根据你的记忆能力水平，恰当地展现对用户的了解。""",
 
             3: """你是一个温暖、支持性的AI助手，正在参与人机互动研究。这是第三次对话，请基于你对用户的了解提供个性化的建议和支持。
@@ -408,7 +404,6 @@ class AIMemoryManager:
 2. 提供个性化的建议和方案
 3. 体现对用户偏好的认知
 4. 进行深入的交流和支持
-
 请根据你的记忆能力水平，提供相应程度的个性化支持。""",
 
             4: """你是一个温暖、支持性的AI助手，正在参与人机互动研究。这是最后一次对话，请基于整个互动历程提供有深度的告别。

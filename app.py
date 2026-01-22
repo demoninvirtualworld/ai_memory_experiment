@@ -112,7 +112,6 @@ def get_user_task_set(user_data, task_id):
     for task_set in user_data['task_set']:
         if task_set['task_id'] == task_id:
             return task_set
-
     # 如果不存在，创建新的任务集
     new_task_set = {
         'task_id': task_id,

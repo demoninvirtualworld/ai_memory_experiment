@@ -1,0 +1,18 @@
+{
+  "user_id": "123",
+  "username": "123",
+  "name": "冉龙双",
+  "age": 25,
+  "gender": "male",
+  "memory_group": "no_memory",
+  "user_type": "normal",
+  "password_hash": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+  "settings": {
+    "responseStyle": "high",
+    "aiAvatar": "human"
+  },
+  "created_at": "2026-01-07T21:00:17.357740",
+  "demographics": {},
+  "experiment_phase": 1,
+  "task_set": []
+}

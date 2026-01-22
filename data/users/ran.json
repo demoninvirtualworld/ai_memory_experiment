@@ -1,0 +1,144 @@
+{
+  "user_id": "ran",
+  "username": "ran",
+  "name": "冉龙双",
+  "age": 25,
+  "gender": "male",
+  "memory_group": "no_memory",
+  "user_type": "normal",
+  "password_hash": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+  "settings": {
+    "responseStyle": "high",
+    "aiAvatar": "human"
+  },
+  "created_at": "2026-01-07T20:49:34.067810",
+  "demographics": {},
+  "experiment_phase": 4,
+  "task_set": [
+    {
+      "task_id": 1,
+      "conversation": [
+        {
+          "message_id": "msg_1767790183.413982",
+          "content": "你好",
+          "is_user": true,
+          "timestamp": "2026-01-07T20:49:43.413982"
+        },
+        {
+          "message_id": "msg_1767790183.751806",
+          "content": "听起来很有趣！（无记忆模式） 能多告诉我一些你的兴趣爱好吗？",
+          "is_user": false,
+          "timestamp": "2026-01-07T20:49:43.751806"
+        },
+        {
+          "message_id": "msg_1767790188.48532",
+          "content": "为啥",
+          "is_user": true,
+          "timestamp": "2026-01-07T20:49:48.485320"
+        },
+        {
+          "message_id": "msg_1767790188.797175",
+          "content": "我明白了。（无记忆模式） 最近有什么让你特别开心或者困扰的事情吗？",
+          "is_user": false,
+          "timestamp": "2026-01-07T20:49:48.797175"
+        }
+      ],
+      "questionnaire": [],
+      "document": {
+        "title": "",
+        "content": "",
+        "submitted": true,
+        "timestamp": "2026-01-07T20:49:43.413982",
+        "questionnaire_data": {
+          "mind_perception": {
+            "q1": "3",
+            "q2": "3"
+          },
+          "intimacy": {
+            "q1": "3"
+          },
+          "trust": {
+            "q1": "3"
+          }
+        }
+      },
+      "submitted": true,
+      "submitted_at": "2026-01-07T20:58:18.388683"
+    },
+    {
+      "task_id": 2,
+      "conversation": [],
+      "questionnaire": [],
+      "document": {
+        "title": "",
+        "content": "",
+        "submitted": true,
+        "timestamp": "2026-01-07T20:58:25.361953",
+        "questionnaire_data": {
+          "mind_perception": {
+            "q1": "3",
+            "q2": "3"
+          },
+          "intimacy": {
+            "q1": "3"
+          },
+          "trust": {
+            "q1": "3"
+          }
+        }
+      },
+      "submitted": true,
+      "submitted_at": "2026-01-07T20:58:25.361953"
+    },
+    {
+      "task_id": 3,
+      "conversation": [],
+      "questionnaire": [],
+      "document": {
+        "title": "",
+        "content": "",
+        "submitted": true,
+        "timestamp": "2026-01-07T20:58:29.203795",
+        "questionnaire_data": {
+          "mind_perception": {
+            "q1": "3",
+            "q2": "3"
+          },
+          "intimacy": {
+            "q1": "3"
+          },
+          "trust": {
+            "q1": "3"
+          }
+        }
+      },
+      "submitted": true,
+      "submitted_at": "2026-01-07T20:58:29.203795"
+    },
+    {
+      "task_id": 4,
+      "conversation": [],
+      "questionnaire": [],
+      "document": {
+        "title": "",
+        "content": "",
+        "submitted": true,
+        "timestamp": "2026-01-07T20:58:31.916841",
+        "questionnaire_data": {
+          "mind_perception": {
+            "q1": "3",
+            "q2": "3"
+          },
+          "intimacy": {
+            "q1": "3"
+          },
+          "trust": {
+            "q1": "3"
+          }
+        }
+      },
+      "submitted": true,
+      "submitted_at": "2026-01-07T20:58:31.916841"
+    }
+  ]
+}
