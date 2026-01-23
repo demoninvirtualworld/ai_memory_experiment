@@ -19,7 +19,15 @@ CORS(app)
 
 # 数据存储路径
 DATA_DIR = 'data/users'
-MEMORY_GROUPS = ['no_memory', 'short_memory', 'medium_memory', 'long_memory']
+# 新的四级记忆架构（基于认知心理学理论）
+MEMORY_GROUPS = ['sensory_memory', 'working_memory', 'gist_memory', 'hybrid_memory']
+# 旧版本记忆组映射（向后兼容）
+LEGACY_MEMORY_MAPPING = {
+    'no_memory': 'sensory_memory',
+    'short_memory': 'working_memory',
+    'medium_memory': 'gist_memory',
+    'long_memory': 'hybrid_memory',
+}
 
 # 初始化大模型管理器
 experiment_config = Config.EXPERIMENT_CONFIG
@@ -666,8 +674,12 @@ def get_ai_response():
         user_id = user_data['user_id']
         memory_group = user_data['memory_group']
 
+        # 处理旧版本记忆组名称
+        if memory_group in LEGACY_MEMORY_MAPPING:
+            memory_group = LEGACY_MEMORY_MAPPING[memory_group]
+
         # 获取历史对话，构建记忆上下文
-        memory_context = MemoryContext(user_id, memory_group)
+        memory_context = MemoryContext(user_id, memory_group, llm_manager=llm_manager)
 
         # 加载该用户所有之前任务的对话
         for prev_task_id in range(1, task_id):
@@ -678,6 +690,9 @@ def get_ai_response():
                     break
             if prev_task_set and prev_task_set.get('conversation'):
                 memory_context.add_conversation(prev_task_id, prev_task_set['conversation'])
+
+        # 设置当前查询（用于混合记忆的相关性检索）
+        memory_context.set_current_query(user_message)
 
         # 获取记忆上下文文本
         memory_text = memory_context.get_context_for_task(task_id)
@@ -796,15 +811,54 @@ def build_system_prompt(task_id: int, memory_group: str, memory_text: str) -> st
 
     base_prompt = base_prompts.get(task_id, base_prompts[1])
 
-    # 根据记忆组别添加不同的指令
+    # 根据记忆组别添加不同的指令（新的四级认知架构）
     memory_instructions = {
-        "no_memory": "\n\n【重要】你没有任何关于用户的记忆，这是你们第一次交流。请不要假装记得任何之前的对话内容。",
-        "short_memory": "\n\n【记忆模式：短期记忆】你只能记住上一次对话的部分内容（约最后1/3）。请基于这些有限的记忆与用户交流。",
-        "medium_memory": "\n\n【记忆模式：中期记忆】你记得之前对话的摘要信息。请基于这些摘要与用户交流，展现对用户的了解。",
-        "long_memory": "\n\n【记忆模式：长期记忆】你完整记得所有之前的对话。请充分利用这些记忆，展现对用户的深度了解和关心。"
+        # L1: 感觉记忆 - 无编码，信息未进入意识
+        "sensory_memory": (
+            "\n\n【记忆模式：感觉记忆】你没有任何关于用户的记忆，每次对话都是全新的开始。"
+            "你无法记住任何之前的对话内容，请不要假装记得。"
+            "如果用户提到'之前说过'，请诚实地表示你不记得。"
+        ),
+
+        # L2: 工作记忆 - Miller 7±2 组块
+        "working_memory": (
+            "\n\n【记忆模式：工作记忆】你只能记住最近几轮的对话内容（约7轮）。"
+            "更早的对话内容已经从你的记忆中消失。"
+            "请基于这些有限的近期记忆与用户交流，如果用户提到更早的事情，你可能不记得了。"
+        ),
+
+        # L3: 要义记忆 - Verbatim -> Gist
+        "gist_memory": (
+            "\n\n【记忆模式：要义记忆】你记得之前对话的大致内容和要点，但不一定记得具体的措辞。"
+            "你了解用户的基本情况和主要话题，但具体细节可能模糊。"
+            "这就像人类的自然记忆一样——记得'聊过什么'但不一定记得'原话怎么说'。"
+        ),
+
+        # L4: 混合记忆 - 短时焦点 + 长时检索
+        "hybrid_memory": (
+            "\n\n【记忆模式：混合记忆】你拥有两种记忆能力："
+            "(1) 清晰记得最近的对话内容；"
+            "(2) 能够回想起与当前话题相关的历史细节。"
+            "当用户提到某个话题时，相关的过往记忆会被唤醒。"
+            "请充分利用这些记忆，展现对用户的深度了解。"
+        )
     }
 
-    memory_instruction = memory_instructions.get(memory_group, "")
+    # 兼容旧版本记忆组名称
+    legacy_mapping = {
+        "no_memory": "sensory_memory",
+        "short_memory": "working_memory",
+        "medium_memory": "gist_memory",
+        "long_memory": "hybrid_memory",
+    }
+
+    # 获取记忆指令
+    if memory_group in memory_instructions:
+        memory_instruction = memory_instructions[memory_group]
+    elif memory_group in legacy_mapping:
+        memory_instruction = memory_instructions[legacy_mapping[memory_group]]
+    else:
+        memory_instruction = ""
 
     # 添加记忆上下文
     if memory_text:

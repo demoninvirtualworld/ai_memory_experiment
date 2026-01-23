@@ -69,6 +69,12 @@
             font-size: 0.75rem;
             font-weight: 500;
         }
+        /* 新的四级认知记忆架构样式 */
+        .sensory-memory { background-color: #F3F4F6; color: #374151; }  /* L1: 灰色 - 无记忆 */
+        .working-memory { background-color: #DBEAFE; color: #1E40AF; }  /* L2: 蓝色 - 工作记忆 */
+        .gist-memory { background-color: #D1FAE5; color: #065F46; }     /* L3: 绿色 - 要义记忆 */
+        .hybrid-memory { background-color: #EDE9FE; color: #5B21B6; }   /* L4: 紫色 - 混合记忆 */
+        /* 旧版本样式（向后兼容） */
         .no-memory { background-color: #F3F4F6; color: #374151; }
         .short-memory { background-color: #DBEAFE; color: #1E40AF; }
         .medium-memory { background-color: #D1FAE5; color: #065F46; }
@@ -403,10 +409,10 @@
                         <label class="block text-sm font-medium text-gray-500 mb-2">记忆组别</label>
                         <select id="register-memory-group"
                                 class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                            <option value="no_memory">无记忆组</option>
-                            <option value="short_memory">短记忆组</option>
-                            <option value="medium_memory">中记忆组</option>
-                            <option value="long_memory">长记忆组</option>
+                            <option value="sensory_memory">L1: 感觉记忆（控制组）</option>
+                            <option value="working_memory">L2: 工作记忆（7±2组块）</option>
+                            <option value="gist_memory">L3: 要义记忆（语义编码）</option>
+                            <option value="hybrid_memory">L4: 混合记忆（联想检索）</option>
                         </select>
                     </div>
 
@@ -928,13 +934,20 @@
             }
 
             getMemoryGroupBadge(memoryGroup) {
+                // 新的四级认知记忆架构
                 const badges = {
-                    'no_memory': { class: 'no-memory', text: '无记忆' },
-                    'short_memory': { class: 'short-memory', text: '短记忆' },
-                    'medium_memory': { class: 'medium-memory', text: '中记忆' },
-                    'long_memory': { class: 'long-memory', text: '长记忆' }
+                    // 新版本命名
+                    'sensory_memory': { class: 'sensory-memory', text: 'L1:感觉' },
+                    'working_memory': { class: 'working-memory', text: 'L2:工作' },
+                    'gist_memory': { class: 'gist-memory', text: 'L3:要义' },
+                    'hybrid_memory': { class: 'hybrid-memory', text: 'L4:混合' },
+                    // 旧版本命名（向后兼容）
+                    'no_memory': { class: 'sensory-memory', text: 'L1:感觉' },
+                    'short_memory': { class: 'working-memory', text: 'L2:工作' },
+                    'medium_memory': { class: 'gist-memory', text: 'L3:要义' },
+                    'long_memory': { class: 'hybrid-memory', text: 'L4:混合' }
                 };
-                return badges[memoryGroup] || { class: 'no-memory', text: '未知' };
+                return badges[memoryGroup] || { class: 'sensory-memory', text: '未知' };
             }
 
             getCompletedTasksCount() {

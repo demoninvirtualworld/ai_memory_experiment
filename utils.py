@@ -272,25 +272,47 @@ class QwenManager:
             print(f"调用通义千问 API 失败: {e}")
             return "网络错误，请检查连接后重试。"
 
-    def generate_summary(self, conversation: str, max_tokens: int = 1000) -> str:
-        """生成对话摘要"""
+    def generate_summary(self, conversation: str, max_chars: int = 500) -> str:
+        """
+        生成对话要义摘要 (Gist Summary)
+
+        基于 Fuzzy Trace Theory，将 Verbatim (字面信息) 转化为 Gist (语义要义)
+
+        Args:
+            conversation: 对话文本
+            max_chars: 摘要最大字数限制
+
+        Returns:
+            要义摘要文本
+        """
         try:
-            system_prompt = """请为以下对话生成一个简洁的摘要，提取关键信息包括：
-1. 用户的基本信息（如姓名、兴趣、工作等）
-2. 用户提到的重要事件或情感
-3. 对话的主要话题和结论
-请用中文回复，保持客观准确。"""
+            system_prompt = f"""你是一个专业的对话分析助手。请将以下对话历史压缩为{max_chars}字以内的要义摘要。
+
+要求：
+1. 保留核心语义和用户意图，去除具体措辞和表面细节
+2. 提取用户画像特征（性格特点、兴趣偏好、关注领域）
+3. 记录重要事件、情感状态和关键决定
+4. 使用第三人称描述（如"用户是..."、"用户曾提到..."）
+5. 突出对后续对话有价值的信息
+
+输出格式：
+- 直接输出摘要内容，不要添加标题或序号
+- 语言简洁，信息密度高
+- 严格控制在{max_chars}字以内"""
 
             messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"请为以下对话生成摘要：\n\n{conversation}"}
+                {"role": "user", "content": f"对话历史：\n\n{conversation}"}
             ]
+
+            # 估算需要的 token 数（中文约 1.5 token/字）
+            max_tokens = int(max_chars * 1.5) + 100
 
             payload = {
                 "model": self.model,
                 "messages": messages,
                 "max_tokens": max_tokens,
-                "temperature": 0.3,
+                "temperature": 0.3,  # 低温度保证输出稳定
                 "stream": False
             }
 
@@ -303,26 +325,47 @@ class QwenManager:
 
             if response.status_code == 200:
                 result = response.json()
-                return result['choices'][0]['message']['content']
+                summary = result['choices'][0]['message']['content']
+                # 确保不超过字数限制
+                if len(summary) > max_chars:
+                    summary = summary[:max_chars] + "..."
+                return summary
             else:
                 print(f"通义千问摘要生成错误: {response.status_code}")
-                return self._generate_fallback_summary(conversation)
+                return self._generate_fallback_summary(conversation, max_chars)
 
         except Exception as e:
             print(f"生成摘要失败: {e}")
-            return self._generate_fallback_summary(conversation)
+            return self._generate_fallback_summary(conversation, max_chars)
 
-    def _generate_fallback_summary(self, conversation: str) -> str:
-        """备用摘要生成"""
+    def _generate_fallback_summary(self, conversation: str, max_chars: int = 500) -> str:
+        """
+        备用摘要生成（降级方案）
+
+        当 LLM API 不可用时，使用规则提取关键信息
+        """
         lines = conversation.split('\n')
-        user_lines = [line for line in lines if '用户：' in line]
+        user_lines = [line[3:].strip() for line in lines if line.startswith('用户：') and len(line) > 15]
 
+        if not user_lines:
+            return ""
+
+        # 提取关键信息
+        summary_parts = []
+
+        # 取前几条和后几条用户发言
         if len(user_lines) > 5:
-            key_lines = user_lines[:3] + ["..."] + user_lines[-2:]
+            key_lines = user_lines[:3] + user_lines[-2:]
         else:
             key_lines = user_lines
 
-        return "对话摘要（自动生成）：\n" + "\n".join(key_lines)
+        summary = "用户曾提到：" + "；".join(key_lines)
+
+        # 限制字数
+        if len(summary) > max_chars:
+            summary = summary[:max_chars - 3] + "..."
+
+        return summary
 
 
 class DeepSeekManager:
@@ -363,25 +406,47 @@ class DeepSeekManager:
             print(f"调用DeepSeek API失败: {e}")
             return "网络错误，请检查连接后重试。"
 
-    def generate_summary(self, conversation: str, max_tokens: int = 1000) -> str:
-        """生成对话摘要"""
+    def generate_summary(self, conversation: str, max_chars: int = 500) -> str:
+        """
+        生成对话要义摘要 (Gist Summary)
+
+        基于 Fuzzy Trace Theory，将 Verbatim (字面信息) 转化为 Gist (语义要义)
+
+        Args:
+            conversation: 对话文本
+            max_chars: 摘要最大字数限制
+
+        Returns:
+            要义摘要文本
+        """
         try:
-            system_prompt = """请为以下对话生成一个简洁的摘要，提取关键信息包括：
-1. 用户的基本信息（如姓名、兴趣、工作等）
-2. 用户提到的重要事件或情感
-3. 对话的主要话题和结论
-请用中文回复，保持客观准确。"""
+            system_prompt = f"""你是一个专业的对话分析助手。请将以下对话历史压缩为{max_chars}字以内的要义摘要。
+
+要求：
+1. 保留核心语义和用户意图，去除具体措辞和表面细节
+2. 提取用户画像特征（性格特点、兴趣偏好、关注领域）
+3. 记录重要事件、情感状态和关键决定
+4. 使用第三人称描述（如"用户是..."、"用户曾提到..."）
+5. 突出对后续对话有价值的信息
+
+输出格式：
+- 直接输出摘要内容，不要添加标题或序号
+- 语言简洁，信息密度高
+- 严格控制在{max_chars}字以内"""
 
             messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"请为以下对话生成摘要：\n\n{conversation}"}
+                {"role": "user", "content": f"对话历史：\n\n{conversation}"}
             ]
+
+            # 估算需要的 token 数（中文约 1.5 token/字）
+            max_tokens = int(max_chars * 1.5) + 100
 
             payload = {
                 "model": "deepseek-chat",
                 "messages": messages,
                 "max_tokens": max_tokens,
-                "temperature": 0.3,
+                "temperature": 0.3,  # 低温度保证输出稳定
                 "stream": False
             }
 
@@ -394,27 +459,44 @@ class DeepSeekManager:
 
             if response.status_code == 200:
                 result = response.json()
-                return result['choices'][0]['message']['content']
+                summary = result['choices'][0]['message']['content']
+                # 确保不超过字数限制
+                if len(summary) > max_chars:
+                    summary = summary[:max_chars] + "..."
+                return summary
             else:
                 print(f"DeepSeek摘要生成错误: {response.status_code}")
-                # 备用摘要生成
-                return self._generate_fallback_summary(conversation)
+                return self._generate_fallback_summary(conversation, max_chars)
 
         except Exception as e:
             print(f"生成摘要失败: {e}")
-            return self._generate_fallback_summary(conversation)
+            return self._generate_fallback_summary(conversation, max_chars)
 
-    def _generate_fallback_summary(self, conversation: str) -> str:
-        """备用摘要生成"""
+    def _generate_fallback_summary(self, conversation: str, max_chars: int = 500) -> str:
+        """
+        备用摘要生成（降级方案）
+
+        当 LLM API 不可用时，使用规则提取关键信息
+        """
         lines = conversation.split('\n')
-        user_lines = [line for line in lines if '用户：' in line]
+        user_lines = [line[3:].strip() for line in lines if line.startswith('用户：') and len(line) > 15]
 
+        if not user_lines:
+            return ""
+
+        # 取前几条和后几条用户发言
         if len(user_lines) > 5:
-            key_lines = user_lines[:3] + ["..."] + user_lines[-2:]
+            key_lines = user_lines[:3] + user_lines[-2:]
         else:
             key_lines = user_lines
 
-        return "对话摘要（自动生成）：\n" + "\n".join(key_lines)
+        summary = "用户曾提到：" + "；".join(key_lines)
+
+        # 限制字数
+        if len(summary) > max_chars:
+            summary = summary[:max_chars - 3] + "..."
+
+        return summary
 
 
 class AIMemoryManager:
