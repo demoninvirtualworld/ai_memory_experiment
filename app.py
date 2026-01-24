@@ -159,10 +159,10 @@ def get_user_task_set(user_data, task_id):
         'submitted': False,
         'submitted_at': None,
         'timer': {
-            'started_at': None,      # 任务开始时间
-            'end_time': None,        # 任务结束时间（开始后15分钟）
-            'duration': 15 * 60,     # 持续时间（秒）
-            'is_expired': False      # 是否已超时
+            'started_at': None,              # 第一条消息时间
+            'total_duration': 15 * 60,       # 总时长（秒）
+            'elapsed_time': 0,               # 已消耗时间（秒）
+            'is_expired': False              # 是否已超时
         }
     }
     user_data['task_set'].append(new_task_set)
@@ -170,28 +170,19 @@ def get_user_task_set(user_data, task_id):
 
 
 def check_task_timer(task_set):
-    """检查任务计时器是否超时"""
+    """检查任务计时器是否超时（简单倒计时模式）"""
     timer = task_set.get('timer', {})
 
-    # 如果没有计时器信息，返回未超时
-    if not timer.get('end_time'):
-        return False
+    total_duration = timer.get('total_duration', 15 * 60)
+    elapsed_time = timer.get('elapsed_time', 0)
 
-    # 解析结束时间
-    try:
-        end_time = datetime.fromisoformat(timer['end_time'])
-        now = datetime.now()
+    # 判断是否超时
+    is_expired = elapsed_time >= total_duration
 
-        # 检查是否超时
-        is_expired = now >= end_time
+    if is_expired and not timer.get('is_expired'):
+        timer['is_expired'] = True
 
-        # 更新超时状态
-        if is_expired and not timer.get('is_expired'):
-            timer['is_expired'] = True
-
-        return is_expired
-    except:
-        return False
+    return is_expired
 
 
 def initialize_data():
@@ -560,7 +551,7 @@ def save_task_document(task_id):
 
 @app.route('/api/users/me/tasks/<int:task_id>/start', methods=['POST'])
 def start_task_timer(task_id):
-    """启动任务计时器"""
+    """启动任务计时器（简单倒计时模式）"""
     user_data = get_user_from_session(request)
     if not user_data:
         return jsonify({'success': False, 'message': '未登录'}), 401
@@ -568,44 +559,54 @@ def start_task_timer(task_id):
     task_set = get_user_task_set(user_data, task_id)
     timer = task_set.get('timer', {})
 
+    total_duration = timer.get('total_duration', 15 * 60)
+    elapsed_time = timer.get('elapsed_time', 0)
+    remaining_time = max(0, total_duration - elapsed_time)
+
     # 如果已经启动过，返回现有的计时器信息
     if timer.get('started_at'):
-        return jsonify({
+        result = {
             'success': True,
             'data': {
                 'started_at': timer['started_at'],
-                'end_time': timer['end_time'],
-                'duration': timer['duration'],
+                'total_duration': int(total_duration),
+                'elapsed_time': int(elapsed_time),
+                'remaining_time': int(remaining_time),
                 'is_expired': check_task_timer(task_set)
             }
-        })
+        }
+        print(f"[DEBUG] start_task_timer (已存在) 返回: elapsed={elapsed_time}, remaining={remaining_time}")
+        return jsonify(result)
 
-    # 首次启动，初始化计时器
+    # 首次启动，记录开始时间
     now = datetime.now()
-    duration = 15 * 60  # 15分钟
-
     timer['started_at'] = now.isoformat()
-    timer['end_time'] = (now + timedelta(seconds=duration)).isoformat()
-    timer['duration'] = duration
+    timer['total_duration'] = 15 * 60
+    timer['elapsed_time'] = 0
     timer['is_expired'] = False
 
     task_set['timer'] = timer
     save_user_data(user_data)
 
-    return jsonify({
+    result = {
         'success': True,
         'data': {
             'started_at': timer['started_at'],
-            'end_time': timer['end_time'],
-            'duration': timer['duration'],
+            'total_duration': int(timer['total_duration']),
+            'elapsed_time': 0,
+            'remaining_time': int(timer['total_duration']),
             'is_expired': False
         }
-    })
+    }
+
+    print(f"[DEBUG] start_task_timer (首次) 返回: elapsed=0, remaining={timer['total_duration']}")
+
+    return jsonify(result)
 
 
 @app.route('/api/users/me/tasks/<int:task_id>/timer', methods=['GET'])
 def get_task_timer(task_id):
-    """获取任务计时器状态"""
+    """获取任务计时器状态（简单倒计时模式）"""
     user_data = get_user_from_session(request)
     if not user_data:
         return jsonify({'success': False, 'message': '未登录'}), 401
@@ -613,21 +614,67 @@ def get_task_timer(task_id):
     task_set = get_user_task_set(user_data, task_id)
     timer = task_set.get('timer', {})
 
+    # 直接使用存储的已用时间
+    elapsed_time = timer.get('elapsed_time', 0)
+    total_duration = timer.get('total_duration', 15 * 60)
+    remaining_time = max(0, total_duration - elapsed_time)
+
     # 检查是否超时
     is_expired = check_task_timer(task_set)
 
-    # 如果状态有变化，保存
-    if is_expired and not timer.get('is_expired'):
+    result = {
+        'success': True,
+        'data': {
+            'started_at': timer.get('started_at'),
+            'total_duration': int(total_duration),
+            'elapsed_time': int(elapsed_time),
+            'remaining_time': int(remaining_time),
+            'is_expired': is_expired
+        }
+    }
+
+    print(f"[DEBUG] get_task_timer 返回: elapsed={elapsed_time}, remaining={remaining_time}")
+
+    return jsonify(result)
+
+
+@app.route('/api/users/me/tasks/<int:task_id>/timer', methods=['POST'])
+def update_task_timer(task_id):
+    """更新任务计时器（前端同步已用时间）"""
+    user_data = get_user_from_session(request)
+    if not user_data:
+        return jsonify({'success': False, 'message': '未登录'}), 401
+
+    data = request.get_json()
+    elapsed_time = data.get('elapsed_time')
+
+    if elapsed_time is None:
+        return jsonify({'success': False, 'message': '缺少elapsed_time参数'})
+
+    task_set = get_user_task_set(user_data, task_id)
+    timer = task_set.get('timer', {})
+
+    # 更新已用时间
+    timer['elapsed_time'] = int(elapsed_time)
+
+    # 检查是否超时
+    total_duration = timer.get('total_duration', 15 * 60)
+    if elapsed_time >= total_duration:
         timer['is_expired'] = True
-        save_user_data(user_data)
+
+    task_set['timer'] = timer
+    save_user_data(user_data)
+
+    remaining_time = max(0, total_duration - elapsed_time)
+
+    print(f"[DEBUG] update_task_timer: elapsed={elapsed_time}, remaining={remaining_time}")
 
     return jsonify({
         'success': True,
         'data': {
-            'started_at': timer.get('started_at'),
-            'end_time': timer.get('end_time'),
-            'duration': timer.get('duration', 15 * 60),
-            'is_expired': is_expired
+            'elapsed_time': int(elapsed_time),
+            'remaining_time': int(remaining_time),
+            'is_expired': timer.get('is_expired', False)
         }
     })
 

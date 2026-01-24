@@ -889,6 +889,13 @@
                 return this.request(`/users/me/tasks/${taskId}/timer`);
             },
 
+            async updateTaskTimer(taskId, elapsedTime) {
+                return this.request(`/users/me/tasks/${taskId}/timer`, {
+                    method: 'POST',
+                    body: JSON.stringify({ elapsed_time: elapsedTime })
+                });
+            },
+
             async getTaskDocument(taskId) {
                 return this.request(`/users/me/tasks/${taskId}/document`);
             },
@@ -1043,8 +1050,15 @@
                 this.currentUser = null;
                 this.currentTaskId = null;
                 this.currentTask = null;
-                this.conversationTimer = null;
-                this.conversationTime = 15 * 60;
+                this.conversationTimer = null;  // 本地倒计时定时器（每秒减1）
+                this.serverSyncTimer = null;    // 后端同步定时器（每10秒）
+                this.beforeUnloadHandler = null; // 页面关闭事件处理器
+                this.visibilityHandler = null;   // 页面可见性事件处理器
+                this.conversationTime = 15 * 60; // 剩余时间（秒）
+                this.totalDuration = 15 * 60;    // 总时长（秒）
+                this.elapsedTime = 0;            // 已用时间（秒）
+                this.lastMessageTime = null;     // 上次发消息的时间戳
+                this.checkpointTime = 15 * 60;   // 检查点剩余时间（用于2分钟无操作回退）
                 this.messageCount = 0;
                 this.tasks = [];
                 this.userData = null;
@@ -1757,7 +1771,7 @@
 
                 // 不在这里启动计时器，改为第一条消息发送后启动
                 // 显示提示
-                this.showNotification('任务已开始，发送第一条消息后将开始15分钟倒计时');
+                this.showNotification('任务已开始！在页面上时持续计时，离开页面自动暂停');
             }
 
             async loadChatHistory() {
@@ -1804,7 +1818,7 @@
                     } else {
                         // 没有历史记录，显示欢迎消息和提示
                         this.addWelcomeMessage();
-                        this.addSystemMessage('💡 提示：计时器将在您发送第一条消息后启动');
+                        this.addSystemMessage('💡 提示：在页面上时持续计时，离开页面自动暂停休息');
                     }
                 } catch (error) {
                     console.error('加载聊天历史失败:', error);
@@ -1818,49 +1832,30 @@
                 if (!taskId || !this.appState.isTaskActive) return;
 
                 try {
-                    // 获取计时器状态
+                    // 从后端恢复计时器状态
+                    const isExpired = await this.restoreTimerFromServer();
+
+                    // 检查是否已经启动过（有 started_at）
                     const response = await ApiService.getTaskTimer(taskId);
-
                     if (response.success && response.data.started_at) {
-                        const timerData = response.data;
+                        // 显示计时器
+                        this.updateTimerDisplay();
+                        if (this.elements.taskTimer) {
+                            this.elements.taskTimer.classList.remove('hidden');
+                        }
 
-                        // 计算剩余时间
-                        const endTime = new Date(timerData.end_time);
-                        const now = new Date();
-                        const remainingSeconds = Math.max(0, Math.floor((endTime - now) / 1000));
-
-                        this.appState.conversationTime = remainingSeconds;
-
-                        // 如果已经超时
-                        if (timerData.is_expired || remainingSeconds <= 0) {
-                            this.appState.conversationTime = 0;
-                            this.updateTimerDisplay();
-                            this.lockConversation();
-                            if (this.elements.taskTimer) {
-                                this.elements.taskTimer.classList.remove('hidden');
-                            }
+                        if (isExpired) {
                             console.log('[DEBUG] 任务已超时');
                             return;
                         }
 
-                        // 启动倒计时
-                        console.log('[DEBUG] 恢复计时器，剩余时间:', remainingSeconds, '秒');
-                        this.updateTimerDisplay();
+                        // 初始化检查点为当前剩余时间（恢复后需要发新消息才开始计算2分钟）
+                        this.appState.checkpointTime = this.appState.conversationTime;
+                        this.appState.lastMessageTime = null; // 清空，等待用户发新消息
 
-                        this.appState.conversationTimer = setInterval(() => {
-                            this.appState.conversationTime--;
-                            this.updateTimerDisplay();
-
-                            if (this.appState.conversationTime <= 0) {
-                                this.endConversationTimer();
-                                this.lockConversation();
-                                this.showNotification('对话时间已结束，请完成任务');
-                            }
-                        }, 1000);
-
-                        if (this.elements.taskTimer) {
-                            this.elements.taskTimer.classList.remove('hidden');
-                        }
+                        // 启动本地倒计时
+                        this.startTimerRefresh();
+                        this.setupBeforeUnloadHandler();
                     }
                 } catch (error) {
                     console.error('恢复计时器失败:', error);
@@ -1913,8 +1908,11 @@
                 if (isFirstMessage) {
                     console.log('[DEBUG] 检测到第一条消息，启动计时器');
                     await this.startConversationTimer();
-                    this.showNotification('计时器已启动，您有15分钟对话时间');
+                    this.showNotification('⏰ 计时已开始！共15分钟对话时间');
                 }
+
+                // 更新检查点（用于2分钟无操作回退）
+                this.updateMessageCheckpoint();
 
                 // 添加用户消息
                 this.addMessageToChat(message, true);
@@ -2094,7 +2092,7 @@
                 if (indicator) indicator.remove();
             }
 
-            // 计时器功能（持久化）
+            // 计时器功能（简单倒计时模式）
             async startConversationTimer() {
                 const taskId = this.appState.currentTaskId;
                 if (!taskId) return;
@@ -2106,60 +2104,192 @@
                     if (response.success) {
                         const timerData = response.data;
 
-                        // 计算剩余时间
-                        const endTime = new Date(timerData.end_time);
-                        const now = new Date();
-                        const remainingSeconds = Math.max(0, Math.floor((endTime - now) / 1000));
+                        console.log('[DEBUG] 计时器数据:', timerData);
 
-                        this.appState.conversationTime = remainingSeconds;
+                        // 记录总时长和已用时间
+                        this.appState.totalDuration = parseInt(timerData.total_duration) || 15 * 60;
+                        this.appState.elapsedTime = parseInt(timerData.elapsed_time) || 0;
+                        this.appState.conversationTime = parseInt(timerData.remaining_time) || 0;
 
                         // 如果已经超时
-                        if (timerData.is_expired || remainingSeconds <= 0) {
+                        if (timerData.is_expired || timerData.remaining_time <= 0) {
                             this.appState.conversationTime = 0;
                             this.updateTimerDisplay();
                             this.lockConversation();
-                            this.showNotification('对话时间已结束');
+                            this.showNotification('对话时间已用完');
+                            if (this.elements.taskTimer) {
+                                this.elements.taskTimer.classList.remove('hidden');
+                            }
                             return;
                         }
 
-                        // 启动倒计时
+                        // 显示计时器
                         this.updateTimerDisplay();
-                        this.appState.conversationTimer = setInterval(() => {
-                            this.appState.conversationTime--;
-                            this.updateTimerDisplay();
-
-                            if (this.appState.conversationTime <= 0) {
-                                this.endConversationTimer();
-                                this.lockConversation();
-                                this.showNotification('对话时间已结束，请完成任务');
-                            }
-                        }, 1000);
-
                         if (this.elements.taskTimer) {
                             this.elements.taskTimer.classList.remove('hidden');
                         }
+
+                        // 启动本地倒计时
+                        this.startTimerRefresh();
+
+                        // 监听页面离开事件，同步时间到后端
+                        this.setupBeforeUnloadHandler();
                     }
                 } catch (error) {
                     console.error('启动计时器失败:', error);
-                    // 降级：使用本地15分钟计时
-                    this.appState.conversationTime = 15 * 60;
-                    this.updateTimerDisplay();
+                }
+            }
 
-                    this.appState.conversationTimer = setInterval(() => {
+            // 设置页面离开时暂停计时
+            setupBeforeUnloadHandler() {
+                if (this.appState.beforeUnloadHandler) return; // 避免重复绑定
+
+                // 页面关闭/刷新时同步
+                this.appState.beforeUnloadHandler = () => {
+                    this.syncTimerToServer();
+                };
+                window.addEventListener('beforeunload', this.appState.beforeUnloadHandler);
+
+                // 页面可见性变化时暂停/恢复
+                this.appState.visibilityHandler = () => {
+                    if (document.hidden) {
+                        // 页面隐藏：暂停倒计时，同步到后端
+                        console.log('[DEBUG] 页面隐藏，暂停计时');
+                        this.pauseLocalCountdown();
+                        this.syncTimerToServer();
+                    } else {
+                        // 页面可见：恢复倒计时
+                        console.log('[DEBUG] 页面可见，恢复计时');
+                        this.resumeLocalCountdown();
+                    }
+                };
+                document.addEventListener('visibilitychange', this.appState.visibilityHandler);
+            }
+
+            // 暂停本地倒计时
+            pauseLocalCountdown() {
+                if (this.appState.conversationTimer) {
+                    clearInterval(this.appState.conversationTimer);
+                    this.appState.conversationTimer = null;
+                }
+                if (this.appState.serverSyncTimer) {
+                    clearInterval(this.appState.serverSyncTimer);
+                    this.appState.serverSyncTimer = null;
+                }
+            }
+
+            // 恢复本地倒计时
+            resumeLocalCountdown() {
+                // 如果时间已用完，不恢复
+                if (this.appState.conversationTime <= 0) return;
+
+                // 如果计时器已在运行，不重复启动
+                if (this.appState.conversationTimer) return;
+
+                // 重新启动倒计时
+                this.startTimerRefresh();
+            }
+
+            // 启动本地倒计时（每秒减1，定期同步到后端）
+            startTimerRefresh() {
+                // 清除旧的定时器
+                if (this.appState.conversationTimer) {
+                    clearInterval(this.appState.conversationTimer);
+                }
+                if (this.appState.serverSyncTimer) {
+                    clearInterval(this.appState.serverSyncTimer);
+                }
+
+                const IDLE_THRESHOLD = 2 * 60 * 1000; // 2分钟（毫秒）
+
+                // 每秒减1的平滑倒计时
+                this.appState.conversationTimer = setInterval(() => {
+                    if (this.appState.conversationTime > 0) {
+                        // 检查是否超过2分钟无操作
+                        if (this.appState.lastMessageTime) {
+                            const idleTime = Date.now() - this.appState.lastMessageTime;
+                            if (idleTime >= IDLE_THRESHOLD) {
+                                // 超过2分钟无操作，回退到检查点
+                                if (this.appState.conversationTime < this.appState.checkpointTime) {
+                                    console.log('[DEBUG] 2分钟无操作，时间回退到:', this.appState.checkpointTime);
+                                    this.appState.conversationTime = this.appState.checkpointTime;
+                                    this.appState.elapsedTime = this.appState.totalDuration - this.appState.checkpointTime;
+                                    this.updateTimerDisplay();
+                                }
+                                return; // 不再倒计时，等待用户操作
+                            }
+                        }
+
                         this.appState.conversationTime--;
+                        this.appState.elapsedTime++;
                         this.updateTimerDisplay();
 
+                        // 检查是否已耗尽
                         if (this.appState.conversationTime <= 0) {
+                            this.syncTimerToServer(); // 同步最终时间
                             this.endConversationTimer();
                             this.lockConversation();
-                            this.showNotification('对话时间已结束，请完成任务');
+                            this.showNotification('对话时间已用完，请完成任务');
                         }
-                    }, 1000);
-
-                    if (this.elements.taskTimer) {
-                        this.elements.taskTimer.classList.remove('hidden');
                     }
+                }, 1000); // 每秒
+
+                // 每10秒同步一次到后端
+                this.appState.serverSyncTimer = setInterval(() => {
+                    this.syncTimerToServer();
+                }, 10000); // 10秒
+            }
+
+            // 用户发送消息时调用，更新检查点
+            updateMessageCheckpoint() {
+                this.appState.lastMessageTime = Date.now();
+                this.appState.checkpointTime = this.appState.conversationTime;
+                console.log('[DEBUG] 更新检查点:', this.appState.checkpointTime, '秒');
+            }
+
+            // 同步已用时间到后端
+            async syncTimerToServer() {
+                const taskId = this.appState.currentTaskId;
+                if (!taskId || this.appState.elapsedTime === undefined) return;
+
+                try {
+                    await ApiService.updateTaskTimer(taskId, this.appState.elapsedTime);
+                    console.log('[DEBUG] 同步到后端: elapsed=', this.appState.elapsedTime);
+                } catch (error) {
+                    console.error('同步计时器失败:', error);
                 }
+            }
+
+            // 从服务器恢复计时器（页面刷新后）
+            async restoreTimerFromServer() {
+                const taskId = this.appState.currentTaskId;
+                if (!taskId) return;
+
+                try {
+                    const response = await ApiService.getTaskTimer(taskId);
+                    if (response.success) {
+                        const timerData = response.data;
+
+                        this.appState.totalDuration = parseInt(timerData.total_duration) || 15 * 60;
+                        this.appState.elapsedTime = parseInt(timerData.elapsed_time) || 0;
+                        this.appState.conversationTime = parseInt(timerData.remaining_time) || 0;
+
+                        console.log('[DEBUG] 从后端恢复: elapsed=', timerData.elapsed_time, ', remaining=', timerData.remaining_time);
+
+                        // 检查是否超时
+                        if (timerData.is_expired || timerData.remaining_time <= 0) {
+                            this.appState.conversationTime = 0;
+                            this.updateTimerDisplay();
+                            this.lockConversation();
+                            return true; // 已超时
+                        }
+
+                        return false; // 未超时
+                    }
+                } catch (error) {
+                    console.error('恢复计时器失败:', error);
+                }
+                return false;
             }
 
             lockConversation() {
@@ -2176,16 +2306,35 @@
             updateTimerDisplay() {
                 if (!this.elements.timerDisplay) return;
 
-                const minutes = Math.floor(this.appState.conversationTime / 60);
-                const seconds = this.appState.conversationTime % 60;
+                // 安全检查，确保 conversationTime 是有效数字
+                const time = this.appState.conversationTime || 0;
+                const timeInSeconds = Math.max(0, Math.floor(time));
+
+                const minutes = Math.floor(timeInSeconds / 60);
+                const seconds = timeInSeconds % 60;
                 this.elements.timerDisplay.textContent =
                     `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
             }
 
             endConversationTimer() {
+                // 清除本地倒计时定时器
                 if (this.appState.conversationTimer) {
                     clearInterval(this.appState.conversationTimer);
                     this.appState.conversationTimer = null;
+                }
+                // 清除服务器同步定时器
+                if (this.appState.serverSyncTimer) {
+                    clearInterval(this.appState.serverSyncTimer);
+                    this.appState.serverSyncTimer = null;
+                }
+                // 清除事件监听器
+                if (this.appState.beforeUnloadHandler) {
+                    window.removeEventListener('beforeunload', this.appState.beforeUnloadHandler);
+                    this.appState.beforeUnloadHandler = null;
+                }
+                if (this.appState.visibilityHandler) {
+                    document.removeEventListener('visibilitychange', this.appState.visibilityHandler);
+                    this.appState.visibilityHandler = null;
                 }
             }
 
@@ -2207,15 +2356,6 @@
                                 <div class="flex items-center text-blue-700">
                                     <i class="fa fa-info-circle mr-2"></i>
                                     <span class="text-sm">实验阶段: 第${task.time_point}天</span>
-                                </div>
-                            </div>
-                            <div class="bg-amber-50 rounded-lg p-3 border border-amber-200">
-                                <div class="flex items-start text-amber-700">
-                                    <i class="fa fa-clock-o mr-2 mt-1"></i>
-                                    <div class="text-sm">
-                                        <div class="font-medium mb-1">计时说明</div>
-                                        <div>15分钟倒计时将在您发送<strong>第一条消息后</strong>开始</div>
-                                    </div>
                                 </div>
                             </div>
                         </div>
