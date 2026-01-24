@@ -1,8 +1,8 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, Response, stream_with_context
 from flask_cors import CORS
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import secrets
 
@@ -157,10 +157,41 @@ def get_user_task_set(user_data, task_id):
             'timestamp': datetime.now().isoformat()
         },
         'submitted': False,
-        'submitted_at': None
+        'submitted_at': None,
+        'timer': {
+            'started_at': None,      # 任务开始时间
+            'end_time': None,        # 任务结束时间（开始后15分钟）
+            'duration': 15 * 60,     # 持续时间（秒）
+            'is_expired': False      # 是否已超时
+        }
     }
     user_data['task_set'].append(new_task_set)
     return new_task_set
+
+
+def check_task_timer(task_set):
+    """检查任务计时器是否超时"""
+    timer = task_set.get('timer', {})
+
+    # 如果没有计时器信息，返回未超时
+    if not timer.get('end_time'):
+        return False
+
+    # 解析结束时间
+    try:
+        end_time = datetime.fromisoformat(timer['end_time'])
+        now = datetime.now()
+
+        # 检查是否超时
+        is_expired = now >= end_time
+
+        # 更新超时状态
+        if is_expired and not timer.get('is_expired'):
+            timer['is_expired'] = True
+
+        return is_expired
+    except:
+        return False
 
 
 def initialize_data():
@@ -527,6 +558,80 @@ def save_task_document(task_id):
     return jsonify({'success': True})
 
 
+@app.route('/api/users/me/tasks/<int:task_id>/start', methods=['POST'])
+def start_task_timer(task_id):
+    """启动任务计时器"""
+    user_data = get_user_from_session(request)
+    if not user_data:
+        return jsonify({'success': False, 'message': '未登录'}), 401
+
+    task_set = get_user_task_set(user_data, task_id)
+    timer = task_set.get('timer', {})
+
+    # 如果已经启动过，返回现有的计时器信息
+    if timer.get('started_at'):
+        return jsonify({
+            'success': True,
+            'data': {
+                'started_at': timer['started_at'],
+                'end_time': timer['end_time'],
+                'duration': timer['duration'],
+                'is_expired': check_task_timer(task_set)
+            }
+        })
+
+    # 首次启动，初始化计时器
+    now = datetime.now()
+    duration = 15 * 60  # 15分钟
+
+    timer['started_at'] = now.isoformat()
+    timer['end_time'] = (now + timedelta(seconds=duration)).isoformat()
+    timer['duration'] = duration
+    timer['is_expired'] = False
+
+    task_set['timer'] = timer
+    save_user_data(user_data)
+
+    return jsonify({
+        'success': True,
+        'data': {
+            'started_at': timer['started_at'],
+            'end_time': timer['end_time'],
+            'duration': timer['duration'],
+            'is_expired': False
+        }
+    })
+
+
+@app.route('/api/users/me/tasks/<int:task_id>/timer', methods=['GET'])
+def get_task_timer(task_id):
+    """获取任务计时器状态"""
+    user_data = get_user_from_session(request)
+    if not user_data:
+        return jsonify({'success': False, 'message': '未登录'}), 401
+
+    task_set = get_user_task_set(user_data, task_id)
+    timer = task_set.get('timer', {})
+
+    # 检查是否超时
+    is_expired = check_task_timer(task_set)
+
+    # 如果状态有变化，保存
+    if is_expired and not timer.get('is_expired'):
+        timer['is_expired'] = True
+        save_user_data(user_data)
+
+    return jsonify({
+        'success': True,
+        'data': {
+            'started_at': timer.get('started_at'),
+            'end_time': timer.get('end_time'),
+            'duration': timer.get('duration', 15 * 60),
+            'is_expired': is_expired
+        }
+    })
+
+
 @app.route('/api/users/me/tasks/<int:task_id>/submit', methods=['POST'])
 def submit_task(task_id):
     """提交任务"""
@@ -669,6 +774,11 @@ def get_ai_response():
 
     if not all([task_id, user_message]):
         return jsonify({'success': False, 'message': '缺少必要参数'})
+
+    # 检查任务计时器是否超时
+    task_set = get_user_task_set(user_data, task_id)
+    if check_task_timer(task_set):
+        return jsonify({'success': False, 'message': '对话时间已结束'}), 403
 
     try:
         user_id = user_data['user_id']
@@ -867,6 +977,121 @@ def build_system_prompt(task_id: int, memory_group: str, memory_text: str) -> st
         memory_section = ""
 
     return base_prompt + memory_instruction + memory_section
+
+
+# AI流式响应API - 使用Server-Sent Events（需要认证）
+@app.route('/api/ai/response/stream', methods=['POST'])
+def get_ai_response_stream():
+    """获取AI流式回复（调用通义千问/DeepSeek流式API）"""
+    user_data = get_user_from_session(request)
+    if not user_data:
+        return jsonify({'success': False, 'message': '未登录'}), 401
+
+    # 管理员不与AI交互
+    if user_data.get('user_type') == 'admin':
+        return jsonify({'success': False, 'message': '管理员用户不能与AI交互'}), 403
+
+    data = request.get_json()
+
+    task_id = data.get('taskId')
+    user_message = data.get('userMessage')
+    response_style = data.get('responseStyle', 'high')
+
+    if not all([task_id, user_message]):
+        return jsonify({'success': False, 'message': '缺少必要参数'})
+
+    # 检查任务计时器是否超时
+    task_set = get_user_task_set(user_data, task_id)
+    if check_task_timer(task_set):
+        return jsonify({'success': False, 'message': '对话时间已结束'}), 403
+
+    def generate():
+        try:
+            user_id = user_data['user_id']
+            memory_group = user_data['memory_group']
+
+            # 处理旧版本记忆组名称
+            if memory_group in LEGACY_MEMORY_MAPPING:
+                memory_group = LEGACY_MEMORY_MAPPING[memory_group]
+
+            # 获取历史对话，构建记忆上下文
+            memory_context = MemoryContext(user_id, memory_group, llm_manager=llm_manager)
+
+            # 加载该用户所有之前任务的对话
+            for prev_task_id in range(1, task_id):
+                prev_task_set = None
+                for ts in user_data.get('task_set', []):
+                    if ts['task_id'] == prev_task_id:
+                        prev_task_set = ts
+                        break
+                if prev_task_set and prev_task_set.get('conversation'):
+                    memory_context.add_conversation(prev_task_id, prev_task_set['conversation'])
+
+            # 设置当前查询（用于混合记忆的相关性检索）
+            memory_context.set_current_query(user_message)
+
+            # 获取记忆上下文文本
+            memory_text = memory_context.get_context_for_task(task_id)
+
+            # 构建系统提示词
+            system_prompt = build_system_prompt(task_id, memory_group, memory_text)
+
+            # 构建消息列表
+            messages = [{"role": "system", "content": system_prompt}]
+
+            # 添加当前任务的对话历史
+            task_set = get_user_task_set(user_data, task_id)
+            current_conversation = task_set.get('conversation', [])
+
+            # 取最近10条消息
+            for msg in current_conversation[-10:]:
+                role = "user" if msg.get('is_user', False) else "assistant"
+                messages.append({"role": role, "content": msg['content']})
+
+            # 添加当前用户消息
+            messages.append({"role": "user", "content": user_message})
+
+            # 根据回应风格调整参数
+            temperature = 0.9 if response_style == 'high' else 0.6
+            max_tokens = 2000 if response_style == 'high' else 1000
+
+            # 收集完整回复用于保存
+            full_response = ""
+
+            # 调用大模型流式API
+            for chunk in llm_manager.generate_response_stream(
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature
+            ):
+                full_response += chunk
+                # 发送SSE格式的数据
+                yield f"data: {json.dumps({'content': chunk})}\n\n"
+
+            # 发送结束信号
+            yield f"data: {json.dumps({'done': True})}\n\n"
+
+            # 保存完整的AI回复
+            if 'conversation' not in task_set:
+                task_set['conversation'] = []
+
+            ai_message = {
+                'message_id': f"msg_{datetime.now().timestamp()}",
+                'content': full_response,
+                'is_user': False,
+                'timestamp': datetime.now().isoformat()
+            }
+
+            task_set['conversation'].append(ai_message)
+            save_user_data(user_data)
+
+        except Exception as e:
+            print(f"AI流式响应错误: {e}")
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'error': f'AI响应生成失败: {str(e)}'})}\n\n"
+
+    return Response(stream_with_context(generate()), content_type='text/event-stream')
 
 
 # 问卷相关API（需要认证）

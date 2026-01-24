@@ -6,6 +6,8 @@
     <title>AI记忆能力实验平台</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <!-- Markdown渲染库 -->
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.1/dist/markdown-it.min.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -112,6 +114,97 @@
         }
         .hidden {
             display: none !important;
+        }
+
+        /* Markdown 内容样式 */
+        .markdown-content {
+            line-height: 1.6;
+        }
+        .markdown-content h1,
+        .markdown-content h2,
+        .markdown-content h3,
+        .markdown-content h4 {
+            font-weight: 600;
+            margin-top: 1em;
+            margin-bottom: 0.5em;
+        }
+        .markdown-content h1 { font-size: 1.5em; }
+        .markdown-content h2 { font-size: 1.3em; }
+        .markdown-content h3 { font-size: 1.1em; }
+        .markdown-content h4 { font-size: 1em; }
+        .markdown-content p {
+            margin-bottom: 0.8em;
+        }
+        .markdown-content ul,
+        .markdown-content ol {
+            margin-left: 1.5em;
+            margin-bottom: 0.8em;
+        }
+        .markdown-content li {
+            margin-bottom: 0.3em;
+        }
+        .markdown-content strong {
+            font-weight: 600;
+            color: #1E293B;
+        }
+        .markdown-content em {
+            font-style: italic;
+        }
+        .markdown-content code {
+            background-color: #F1F5F9;
+            padding: 0.2em 0.4em;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #E11D48;
+        }
+        .markdown-content pre {
+            background-color: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            border-radius: 6px;
+            padding: 1em;
+            overflow-x: auto;
+            margin-bottom: 1em;
+        }
+        .markdown-content pre code {
+            background-color: transparent;
+            padding: 0;
+            color: #1E293B;
+        }
+        .markdown-content blockquote {
+            border-left: 4px solid #3B82F6;
+            padding-left: 1em;
+            margin-left: 0;
+            color: #64748B;
+            font-style: italic;
+            margin-bottom: 1em;
+        }
+        .markdown-content a {
+            color: #3B82F6;
+            text-decoration: underline;
+        }
+        .markdown-content a:hover {
+            color: #2563EB;
+        }
+        .markdown-content hr {
+            border: none;
+            border-top: 1px solid #E2E8F0;
+            margin: 1.5em 0;
+        }
+        .markdown-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-bottom: 1em;
+        }
+        .markdown-content th,
+        .markdown-content td {
+            border: 1px solid #E2E8F0;
+            padding: 0.5em;
+            text-align: left;
+        }
+        .markdown-content th {
+            background-color: #F8FAFC;
+            font-weight: 600;
         }
     </style>
 </head>
@@ -678,6 +771,7 @@
         const ApiService = {
             baseURL: '/api',
             sessionToken: localStorage.getItem('session_token'),
+            isInitializing: false, // 标记是否在初始化阶段
 
             async request(endpoint, options = {}) {
                 try {
@@ -702,7 +796,13 @@
                         if (response.status === 401) {
                             // 未授权，清除会话
                             this.clearSession();
-                            window.location.reload();
+
+                            // 如果不是初始化阶段，显示提示
+                            if (!this.isInitializing) {
+                                console.log('会话已过期，请重新登录');
+                                // 触发自定义事件，让UI显示提示
+                                window.dispatchEvent(new CustomEvent('session-expired'));
+                            }
                         }
                         throw new Error(`HTTP错误! 状态: ${response.status}`);
                     }
@@ -715,14 +815,25 @@
                 }
             },
 
-            setSession(token) {
+            setSession(token, userData = null) {
                 this.sessionToken = token;
                 localStorage.setItem('session_token', token);
+
+                // 同时保存用户信息
+                if (userData) {
+                    localStorage.setItem('user_data', JSON.stringify(userData));
+                }
             },
 
             clearSession() {
                 this.sessionToken = null;
                 localStorage.removeItem('session_token');
+                localStorage.removeItem('user_data');
+            },
+
+            getCachedUserData() {
+                const cached = localStorage.getItem('user_data');
+                return cached ? JSON.parse(cached) : null;
             },
 
             // 认证相关
@@ -766,6 +877,16 @@
 
             async getTask(taskId) {
                 return this.request(`/tasks/${taskId}`);
+            },
+
+            async startTaskTimer(taskId) {
+                return this.request(`/users/me/tasks/${taskId}/start`, {
+                    method: 'POST'
+                });
+            },
+
+            async getTaskTimer(taskId) {
+                return this.request(`/users/me/tasks/${taskId}/timer`);
             },
 
             async getTaskDocument(taskId) {
@@ -818,6 +939,77 @@
                 });
             },
 
+            // AI流式回复
+            async getAIResponseStream(taskId, userMessage, responseStyle, onChunk, onComplete, onError) {
+                try {
+                    const url = `${this.baseURL}/ai/response/stream`;
+
+                    const headers = {
+                        'Content-Type': 'application/json'
+                    };
+
+                    if (this.sessionToken) {
+                        headers['Authorization'] = `Bearer ${this.sessionToken}`;
+                    }
+
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({
+                            taskId,
+                            userMessage,
+                            responseStyle
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP错误! 状态: ${response.status}`);
+                    }
+
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+
+                        if (done) break;
+
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop(); // 保留不完整的行
+
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                const dataStr = line.substring(6);
+                                try {
+                                    const data = JSON.parse(dataStr);
+
+                                    if (data.error) {
+                                        onError(data.error);
+                                        return;
+                                    }
+
+                                    if (data.done) {
+                                        onComplete();
+                                        return;
+                                    }
+
+                                    if (data.content) {
+                                        onChunk(data.content);
+                                    }
+                                } catch (e) {
+                                    console.error('解析SSE数据失败:', e);
+                                }
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('流式API请求失败:', error);
+                    onError(error.message || '网络错误，请检查连接后重试。');
+                }
+            },
+
             // 实验进度
             async getExperimentProgress() {
                 return this.request('/experiment/progress');
@@ -862,23 +1054,40 @@
 
             async initialize() {
                 try {
+                    // 标记初始化阶段开始
+                    ApiService.isInitializing = true;
+
                     // 检查是否有保存的会话
                     if (ApiService.sessionToken) {
-                        const userResponse = await ApiService.getCurrentUser();
-                        if (userResponse.success) {
-                            this.currentUser = userResponse.data;
-                            this.userData = userResponse.data;
+                        console.log('检测到已保存的会话Token，尝试自动登录...');
+                        try {
+                            const userResponse = await ApiService.getCurrentUser();
+                            if (userResponse.success) {
+                                this.currentUser = userResponse.data;
+                                this.userData = userResponse.data;
 
-                            // 如果是管理员，加载用户列表
-                            if (this.isAdmin()) {
-                                await this.loadAllUsers();
+                                // 更新localStorage中的用户数据（可能已更新）
+                                ApiService.setSession(ApiService.sessionToken, userResponse.data);
+
+                                console.log('自动登录成功:', userResponse.data.name);
+
+                                // 如果是管理员，加载用户列表
+                                if (this.isAdmin()) {
+                                    await this.loadAllUsers();
+                                } else {
+                                    // 普通用户加载当前任务
+                                    await this.loadCurrentTask();
+                                }
                             } else {
-                                // 普通用户加载当前任务
-                                await this.loadCurrentTask();
+                                console.log('会话验证失败，需要重新登录');
+                                ApiService.clearSession();
                             }
-                        } else {
+                        } catch (error) {
+                            console.error('自动登录失败:', error);
                             ApiService.clearSession();
                         }
+                    } else {
+                        console.log('未检测到保存的会话，显示登录界面');
                     }
 
                     // 加载任务列表
@@ -889,6 +1098,9 @@
 
                 } catch (error) {
                     console.error('初始化应用状态失败:', error);
+                } finally {
+                    // 标记初始化阶段结束
+                    ApiService.isInitializing = false;
                 }
             }
 
@@ -980,6 +1192,13 @@
                 if (this.elements) {
                     this.initializeEventListeners();
                 }
+                // 初始化Markdown渲染器
+                this.md = window.markdownit({
+                    html: false,        // 不允许HTML标签
+                    breaks: true,       // 将\n转换为<br>
+                    linkify: true,      // 自动识别链接
+                    typographer: true   // 启用智能标点
+                });
             }
 
             initializeElements() {
@@ -1053,6 +1272,12 @@
 
             initializeEventListeners() {
                 if (!this.elements) return;
+
+                // 监听会话过期事件
+                window.addEventListener('session-expired', () => {
+                    this.showNotification('会话已过期，请重新登录');
+                    this.updateUIAfterLogout();
+                });
 
                 // 认证相关事件
                 if (this.elements.loginBtn) {
@@ -1199,7 +1424,8 @@
                 try {
                     const response = await ApiService.login({ username, password });
                     if (response.success) {
-                        ApiService.setSession(response.data.session_token);
+                        // 保存token和用户数据到localStorage
+                        ApiService.setSession(response.data.session_token, response.data.user);
                         this.appState.currentUser = response.data.user;
                         this.appState.userData = response.data.user;
 
@@ -1238,7 +1464,8 @@
                     });
 
                     if (response.success) {
-                        ApiService.setSession(response.data.session_token);
+                        // 保存token和用户数据到localStorage
+                        ApiService.setSession(response.data.session_token, response.data.user);
                         this.appState.currentUser = response.data.user;
                         this.appState.userData = response.data.user;
 
@@ -1528,10 +1755,9 @@
                 // 加载历史聊天记录
                 await this.loadChatHistory();
 
-                // 开始计时器
-                this.startConversationTimer();
-
-                this.showNotification('任务已开始，请与AI进行对话');
+                // 不在这里启动计时器，改为第一条消息发送后启动
+                // 显示提示
+                this.showNotification('任务已开始，发送第一条消息后将开始15分钟倒计时');
             }
 
             async loadChatHistory() {
@@ -1549,7 +1775,9 @@
                     const response = await ApiService.getTaskChats(task.id);
                     console.log('[DEBUG] API response:', response);
 
-                    if (response.success && response.data && response.data.length > 0) {
+                    const hasHistory = response.success && response.data && response.data.length > 0;
+
+                    if (hasHistory) {
                         // 有历史记录，显示历史消息
                         console.log(`[DEBUG] 加载了 ${response.data.length} 条历史消息`);
 
@@ -1569,14 +1797,73 @@
                         if (this.elements.messageCount) {
                             this.elements.messageCount.textContent = this.appState.messageCount;
                         }
+
+                        // 如果有历史记录，说明已经发送过消息，需要恢复计时器
+                        console.log('[DEBUG] 检测到历史记录，恢复计时器');
+                        await this.restoreTimerIfNeeded();
                     } else {
-                        // 没有历史记录，显示欢迎消息
+                        // 没有历史记录，显示欢迎消息和提示
                         this.addWelcomeMessage();
+                        this.addSystemMessage('💡 提示：计时器将在您发送第一条消息后启动');
                     }
                 } catch (error) {
                     console.error('加载聊天历史失败:', error);
                     // 出错时显示欢迎消息
                     this.addWelcomeMessage();
+                }
+            }
+
+            async restoreTimerIfNeeded() {
+                const taskId = this.appState.currentTaskId;
+                if (!taskId || !this.appState.isTaskActive) return;
+
+                try {
+                    // 获取计时器状态
+                    const response = await ApiService.getTaskTimer(taskId);
+
+                    if (response.success && response.data.started_at) {
+                        const timerData = response.data;
+
+                        // 计算剩余时间
+                        const endTime = new Date(timerData.end_time);
+                        const now = new Date();
+                        const remainingSeconds = Math.max(0, Math.floor((endTime - now) / 1000));
+
+                        this.appState.conversationTime = remainingSeconds;
+
+                        // 如果已经超时
+                        if (timerData.is_expired || remainingSeconds <= 0) {
+                            this.appState.conversationTime = 0;
+                            this.updateTimerDisplay();
+                            this.lockConversation();
+                            if (this.elements.taskTimer) {
+                                this.elements.taskTimer.classList.remove('hidden');
+                            }
+                            console.log('[DEBUG] 任务已超时');
+                            return;
+                        }
+
+                        // 启动倒计时
+                        console.log('[DEBUG] 恢复计时器，剩余时间:', remainingSeconds, '秒');
+                        this.updateTimerDisplay();
+
+                        this.appState.conversationTimer = setInterval(() => {
+                            this.appState.conversationTime--;
+                            this.updateTimerDisplay();
+
+                            if (this.appState.conversationTime <= 0) {
+                                this.endConversationTimer();
+                                this.lockConversation();
+                                this.showNotification('对话时间已结束，请完成任务');
+                            }
+                        }, 1000);
+
+                        if (this.elements.taskTimer) {
+                            this.elements.taskTimer.classList.remove('hidden');
+                        }
+                    }
+                } catch (error) {
+                    console.error('恢复计时器失败:', error);
                 }
             }
 
@@ -1621,6 +1908,14 @@
                 const message = this.elements.messageInput.value.trim();
                 if (!message || !this.appState.isTaskActive) return;
 
+                // 检查是否是第一条消息，如果是则启动计时器
+                const isFirstMessage = this.appState.messageCount === 0 && !this.appState.conversationTimer;
+                if (isFirstMessage) {
+                    console.log('[DEBUG] 检测到第一条消息，启动计时器');
+                    await this.startConversationTimer();
+                    this.showNotification('计时器已启动，您有15分钟对话时间');
+                }
+
                 // 添加用户消息
                 this.addMessageToChat(message, true);
                 this.elements.messageInput.value = '';
@@ -1647,21 +1942,51 @@
                 this.showTypingIndicator();
 
                 try {
-                    // 获取AI回复
-                    const response = await ApiService.getAIResponse(
+                    // 使用流式API获取AI回复
+                    let aiMessageDiv = null;
+                    let aiContentDiv = null;
+                    let fullContent = ''; // 累积完整内容用于markdown渲染
+
+                    await ApiService.getAIResponseStream(
                         this.appState.currentTaskId,
                         message,
-                        'high'
+                        'high',
+                        // onChunk - 收到内容片段时调用
+                        (chunk) => {
+                            // 首次收到内容时，隐藏输入指示器并创建消息div
+                            if (!aiMessageDiv) {
+                                this.hideTypingIndicator();
+                                const result = this.createStreamingMessageDiv();
+                                aiMessageDiv = result.messageDiv;
+                                aiContentDiv = result.contentDiv;
+                            }
+
+                            // 累积内容
+                            fullContent += chunk;
+
+                            // 渲染Markdown并更新显示
+                            if (aiContentDiv) {
+                                const renderedHtml = this.md.render(fullContent);
+                                aiContentDiv.innerHTML = renderedHtml;
+                                // 滚动到底部
+                                this.elements.chatContainer.scrollTop = this.elements.chatContainer.scrollHeight;
+                            }
+                        },
+                        // onComplete - 流式传输完成时调用
+                        () => {
+                            console.log('AI回复完成');
+                            this.appState.messageCount++;
+                            if (this.elements.messageCount) {
+                                this.elements.messageCount.textContent = this.appState.messageCount;
+                            }
+                        },
+                        // onError - 发生错误时调用
+                        (error) => {
+                            console.error('流式API错误:', error);
+                            this.hideTypingIndicator();
+                            this.addMessageToChat(error || '网络错误，请检查连接后重试。', false);
+                        }
                     );
-
-                    this.hideTypingIndicator();
-
-                    if (response.success) {
-                        this.addMessageToChat(response.data.message, false);
-                        this.appState.messageCount++;
-                    } else {
-                        this.addMessageToChat('抱歉，我暂时无法回复。请稍后再试。', false);
-                    }
                 } catch (error) {
                     console.error('发送消息失败:', error);
                     this.hideTypingIndicator();
@@ -1675,6 +2000,16 @@
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `${isUser ? 'chat-bubble-user' : 'chat-bubble-ai'} animate-fade-in`;
 
+                // 对AI消息使用Markdown渲染，用户消息保持纯文本
+                let renderedContent;
+                if (isUser) {
+                    // 用户消息：转义HTML并保留换行
+                    renderedContent = this.escapeHtml(content).replace(/\n/g, '<br>');
+                } else {
+                    // AI消息：使用Markdown渲染
+                    renderedContent = this.md.render(content);
+                }
+
                 messageDiv.innerHTML = `
                     <div class="flex items-start space-x-3">
                         <div class="flex-shrink-0">
@@ -1684,7 +2019,7 @@
                         </div>
                         <div class="flex-1">
                             <div class="text-sm font-medium mb-1">${isUser ? '您' : 'AI助手'}</div>
-                            <div class="text-sm">${content}</div>
+                            <div class="text-sm ${isUser ? '' : 'markdown-content'}">${renderedContent}</div>
                         </div>
                     </div>
                 `;
@@ -1696,6 +2031,39 @@
                 if (this.elements.messageCount) {
                     this.elements.messageCount.textContent = this.appState.messageCount;
                 }
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            createStreamingMessageDiv() {
+                if (!this.elements.chatContainer) return null;
+
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'chat-bubble-ai animate-fade-in';
+
+                messageDiv.innerHTML = `
+                    <div class="flex items-start space-x-3">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
+                                <i class="fa fa-robot text-gray-600 text-sm"></i>
+                            </div>
+                        </div>
+                        <div class="flex-1">
+                            <div class="text-sm font-medium mb-1">AI助手</div>
+                            <div class="text-sm markdown-content streaming-content"></div>
+                        </div>
+                    </div>
+                `;
+
+                this.elements.chatContainer.appendChild(messageDiv);
+                this.elements.chatContainer.scrollTop = this.elements.chatContainer.scrollHeight;
+
+                const contentDiv = messageDiv.querySelector('.streaming-content');
+                return { messageDiv, contentDiv };
             }
 
             showTypingIndicator() {
@@ -1726,23 +2094,82 @@
                 if (indicator) indicator.remove();
             }
 
-            // 计时器功能
-            startConversationTimer() {
-                this.appState.conversationTime = 15 * 60; // 15分钟
-                this.updateTimerDisplay();
+            // 计时器功能（持久化）
+            async startConversationTimer() {
+                const taskId = this.appState.currentTaskId;
+                if (!taskId) return;
 
-                this.appState.conversationTimer = setInterval(() => {
-                    this.appState.conversationTime--;
+                try {
+                    // 调用后端API启动或获取计时器
+                    const response = await ApiService.startTaskTimer(taskId);
+
+                    if (response.success) {
+                        const timerData = response.data;
+
+                        // 计算剩余时间
+                        const endTime = new Date(timerData.end_time);
+                        const now = new Date();
+                        const remainingSeconds = Math.max(0, Math.floor((endTime - now) / 1000));
+
+                        this.appState.conversationTime = remainingSeconds;
+
+                        // 如果已经超时
+                        if (timerData.is_expired || remainingSeconds <= 0) {
+                            this.appState.conversationTime = 0;
+                            this.updateTimerDisplay();
+                            this.lockConversation();
+                            this.showNotification('对话时间已结束');
+                            return;
+                        }
+
+                        // 启动倒计时
+                        this.updateTimerDisplay();
+                        this.appState.conversationTimer = setInterval(() => {
+                            this.appState.conversationTime--;
+                            this.updateTimerDisplay();
+
+                            if (this.appState.conversationTime <= 0) {
+                                this.endConversationTimer();
+                                this.lockConversation();
+                                this.showNotification('对话时间已结束，请完成任务');
+                            }
+                        }, 1000);
+
+                        if (this.elements.taskTimer) {
+                            this.elements.taskTimer.classList.remove('hidden');
+                        }
+                    }
+                } catch (error) {
+                    console.error('启动计时器失败:', error);
+                    // 降级：使用本地15分钟计时
+                    this.appState.conversationTime = 15 * 60;
                     this.updateTimerDisplay();
 
-                    if (this.appState.conversationTime <= 0) {
-                        this.endConversationTimer();
-                        this.showNotification('对话时间已结束，请完成任务');
-                    }
-                }, 1000);
+                    this.appState.conversationTimer = setInterval(() => {
+                        this.appState.conversationTime--;
+                        this.updateTimerDisplay();
 
-                if (this.elements.taskTimer) {
-                    this.elements.taskTimer.classList.remove('hidden');
+                        if (this.appState.conversationTime <= 0) {
+                            this.endConversationTimer();
+                            this.lockConversation();
+                            this.showNotification('对话时间已结束，请完成任务');
+                        }
+                    }, 1000);
+
+                    if (this.elements.taskTimer) {
+                        this.elements.taskTimer.classList.remove('hidden');
+                    }
+                }
+            }
+
+            lockConversation() {
+                // 锁定输入框
+                if (this.elements.messageInput) {
+                    this.elements.messageInput.disabled = true;
+                    this.elements.messageInput.placeholder = '对话时间已结束';
+                }
+                if (this.elements.sendBtn) {
+                    this.elements.sendBtn.disabled = true;
                 }
             }
 
@@ -1780,6 +2207,15 @@
                                 <div class="flex items-center text-blue-700">
                                     <i class="fa fa-info-circle mr-2"></i>
                                     <span class="text-sm">实验阶段: 第${task.time_point}天</span>
+                                </div>
+                            </div>
+                            <div class="bg-amber-50 rounded-lg p-3 border border-amber-200">
+                                <div class="flex items-start text-amber-700">
+                                    <i class="fa fa-clock-o mr-2 mt-1"></i>
+                                    <div class="text-sm">
+                                        <div class="font-medium mb-1">计时说明</div>
+                                        <div>15分钟倒计时将在您发送<strong>第一条消息后</strong>开始</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

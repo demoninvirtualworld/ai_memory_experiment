@@ -272,6 +272,50 @@ class QwenManager:
             print(f"调用通义千问 API 失败: {e}")
             return "网络错误，请检查连接后重试。"
 
+    def generate_response_stream(self, messages: List[Dict], max_tokens: int = 2000, temperature: float = 0.8):
+        """调用通义千问 API 生成流式回复（生成器）"""
+        try:
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "stream": True
+            }
+
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                headers=self.headers,
+                json=payload,
+                timeout=60,
+                stream=True
+            )
+
+            if response.status_code == 200:
+                for line in response.iter_lines():
+                    if line:
+                        line = line.decode('utf-8')
+                        if line.startswith('data: '):
+                            data_str = line[6:]
+                            if data_str == '[DONE]':
+                                break
+                            try:
+                                data = json.loads(data_str)
+                                if 'choices' in data and len(data['choices']) > 0:
+                                    delta = data['choices'][0].get('delta', {})
+                                    content = delta.get('content', '')
+                                    if content:
+                                        yield content
+                            except json.JSONDecodeError:
+                                continue
+            else:
+                print(f"通义千问 API 错误: {response.status_code} - {response.text}")
+                yield "抱歉，我暂时无法回复。请稍后再试。"
+
+        except Exception as e:
+            print(f"调用通义千问 API 失败: {e}")
+            yield "网络错误，请检查连接后重试。"
+
     def generate_summary(self, conversation: str, max_chars: int = 500) -> str:
         """
         生成对话要义摘要 (Gist Summary)
@@ -405,6 +449,50 @@ class DeepSeekManager:
         except Exception as e:
             print(f"调用DeepSeek API失败: {e}")
             return "网络错误，请检查连接后重试。"
+
+    def generate_response_stream(self, messages: List[Dict], max_tokens: int = 2000, temperature: float = 1.5):
+        """调用DeepSeek API生成流式回复（生成器）"""
+        try:
+            payload = {
+                "model": "deepseek-chat",
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "stream": True
+            }
+
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                headers=self.headers,
+                json=payload,
+                timeout=30,
+                stream=True
+            )
+
+            if response.status_code == 200:
+                for line in response.iter_lines():
+                    if line:
+                        line = line.decode('utf-8')
+                        if line.startswith('data: '):
+                            data_str = line[6:]
+                            if data_str == '[DONE]':
+                                break
+                            try:
+                                data = json.loads(data_str)
+                                if 'choices' in data and len(data['choices']) > 0:
+                                    delta = data['choices'][0].get('delta', {})
+                                    content = delta.get('content', '')
+                                    if content:
+                                        yield content
+                            except json.JSONDecodeError:
+                                continue
+            else:
+                print(f"DeepSeek API错误: {response.status_code} - {response.text}")
+                yield "抱歉，我暂时无法回复。请稍后再试。"
+
+        except Exception as e:
+            print(f"调用DeepSeek API失败: {e}")
+            yield "网络错误，请检查连接后重试。"
 
     def generate_summary(self, conversation: str, max_chars: int = 500) -> str:
         """
