@@ -105,16 +105,29 @@ def save_user_data(user_data):
         json.dump(user_data, f, ensure_ascii=False, indent=2)
 
 
+# def get_all_users():
+#     """获取所有用户列表"""
+#     ensure_data_dir()
+#     users = []
+#     for filename in os.listdir(DATA_DIR):
+#         if filename.endswith('.json'):
+#             user_id = filename[:-5]  # 去掉.json后缀
+#             user_data = load_user_data(user_id)
+#             if user_data:
+#                 users.append(user_data)
+#     return users
+
 def get_all_users():
     """获取所有用户列表"""
     ensure_data_dir()
     users = []
-    for filename in os.listdir(DATA_DIR):
-        if filename.endswith('.json'):
-            user_id = filename[:-5]  # 去掉.json后缀
-            user_data = load_user_data(user_id)
-            if user_data:
-                users.append(user_data)
+    with os.scandir(DATA_DIR) as entries:
+        for entry in entries:
+            if entry.is_file() and entry.name.endswith('.json'):
+                user_id = entry.name[:-5]  # 去掉.json后缀
+                user_data = load_user_data(user_id)
+                if user_data:
+                    users.append(user_data) 
     return users
 
 
@@ -133,11 +146,11 @@ def get_user_task_set(user_data, task_id):
     if 'task_set' not in user_data:
         user_data['task_set'] = []
 
-    for task_set in user_data['task_set']:
-        if task_set['task_id'] == task_id:
-            return task_set
+    for task in user_data['task_set']:
+        if task['task_id'] == task_id:
+            return task
     # 如果不存在，创建新的任务集
-    new_task_set = {
+    new_task = {
         'task_id': task_id,
         'conversation': [],
         'questionnaire': [],
@@ -150,8 +163,8 @@ def get_user_task_set(user_data, task_id):
         'submitted': False,
         'submitted_at': None
     }
-    user_data['task_set'].append(new_task_set)
-    return new_task_set
+    user_data['task_set'].append(new_task)
+    return new_task
 
 
 def initialize_data():

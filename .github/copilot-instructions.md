@@ -1,56 +1,51 @@
+
 # Copilot / AI agent instructions for ai_memory_experiment
 
-Purpose: give an AI coding agent fast, actionable context so it can be productive immediately.
+**Purpose:** Enable AI coding agents to be productive immediately by providing actionable, project-specific context.
 
-- Big picture:
-  - This is a small Flask-based experimental platform that simulates an "AI memory" study.
-  - `app.py` is the single entrypoint that defines the HTTP API, static serving, and simple file-backed storage under `data/users/`.
-  - `models.py` contains higher-level data shapes and the `MemoryContext` logic used to build memory-aware prompts/summaries.
+## Big Picture
+- Flask-based experimental platform for simulating "AI memory" in human-AI interaction.
+- `app.py`: main entrypoint, HTTP API, static serving, file-backed user/task storage under `data/users/`.
+- `models.py`: data models (`User`, `Task`, `Document`, `ChatMessage`, `MemoryContext`), memory context logic for different memory group behaviors.
+- `utils.py`: managers for LLM API (Qwen/DeepSeek), data, and memory orchestration.
+- No database: all persistent data is JSON files in `data/users/` and related folders.
 
-- Key files and responsibilities:
-  - `app.py`: routing, auth/session management (`active_sessions`), task lifecycle, simulated AI responses (`/api/ai/response`). Primary place to change API behavior.
-  - `models.py`: `User`, `Task`, `Document`, `ChatMessage`, and `MemoryContext`. Implementations show how memory variants (`no/short/medium/long`) are derived.
-  - `data/users/`: persistent user JSON files; each file is named `<user_id>.json` and stores `task_set`, `conversation`, `document`, `questionnaire`, `experiment_phase`, etc.
-  - `static/index.html`: the minimal frontend used during manual testing.
+## Key Files & Responsibilities
+- `app.py`: API routing, session/auth (`active_sessions`), task lifecycle, AI response simulation (`/api/ai/response`).
+- `models.py`: memory group logic (`no_memory`, `short_memory`, `medium_memory`, `long_memory`), data shapes, context helpers.
+- `utils.py`: LLM API wrappers, data access, memory context builder.
+- `data/users/`: user JSON files (`<user_id>.json`), each with `task_set`, `conversation`, `document`, `questionnaire`, `experiment_phase`, etc.
+- `static/index.html`: minimal frontend for manual testing.
 
-- Important runtime / dev workflows:
-  - Start locally with: `python app.py` (the app listens on port 3000).
-  - Dependencies are listed in `requirements.txt` (Flask, Flask-CORS). Use a virtualenv and `pip install -r requirements.txt`.
-  - Debug helper: POST `/api/debug/reset` clears `data/users/` and recreates the default admin (`admin/psy2025`). Useful for tests.
+## Developer Workflows
+- **Run locally:** `python app.py` (listens on port 8000).
+- **Install deps:** `pip install -r requirements.txt` (Flask, Flask-CORS).
+- **Reset data:** POST `/api/debug/reset` (clears users, recreates admin `admin/psy2025`).
+- **API auth:** Use `Authorization: Bearer <session_token>` header after login.
+- **Default admin:** username `admin`, password `psy2025`.
 
-- Auth and integration notes:
-  - Sessions are in-memory in `app.py` variable `active_sessions`. API requests authenticate via header `Authorization: Bearer <session_token>`.
-  - Example login flow: POST `/api/auth/login` -> returns `session_token`. Use that token for subsequent authenticated calls.
-  - Default admin exists after startup: username `admin`, password `psy2025`. Admin endpoints check `user_type == 'admin'`.
+## Project Conventions & Patterns
+- User/task data is always file-based. If adding DB support, provide migration/compat.
+- Timestamps: always ISO string (`datetime.now().isoformat()`).
+- Passwords: SHA256 hash via `hash_password()` in `app.py`.
+- `task_set` items: `task_id`, `conversation`, `questionnaire`, `document`, `submitted`, `submitted_at`.
+- Conversation messages: dicts with `message_id`, `content`, `is_user`, `timestamp`.
+- Task definitions: see `initialize_data()` in `app.py`—keep numeric order and phase mapping.
+- Memory context: see `MemoryContext.get_context_for_task()` in `models.py` for group logic and helpers (`_conversation_to_text`, `_generate_conversation_summary`, `_truncate_to_tokens`).
 
-- Data & patterns agents should preserve:
-  - User storage is file-based (no DB). Any code changes that assume DBs should also include migration or a compatibility layer.
-  - Task definitions are initialized in `initialize_data()` (in `app.py`). Editing tasks should keep the numeric `task_id` ordering and phases.
-  - Conversation messages are dictionaries with keys: `message_id`, `content`, `is_user`, `timestamp`. Keep this shape when producing or parsing chat data.
-  - `task_set` items include `task_id`, `conversation`, `questionnaire`, `document`, `submitted`, `submitted_at`.
+## Integration & Extension
+- LLM API: Qwen/DeepSeek, switch in `config.py` (`model_provider`).
+- To add new memory behaviors, extend `MemoryContext` and update API logic.
+- If user schema changes, update `create_default_admin()` and provide migration.
 
-- Memory behavior specifics (important for AI features):
-  - `MemoryContext.get_context_for_task(...)` in `models.py` implements four behaviors:
-    - `no_memory` -> empty context
-    - `short_memory` -> last 1/3 of previous conversation for previous task
-    - `medium_memory` -> generated summaries of previous tasks (simple extractive summary in code)
-    - `long_memory` -> full combined history of earlier tasks (truncated by characters/tokens)
-  - When updating or extending memory logic, follow existing helpers: `_conversation_to_text`, `_generate_conversation_summary`, `_truncate_to_tokens`.
+## Example API Usage
+- Get current user: `GET /api/users/me` (auth required)
+- Simulate AI reply: `POST /api/ai/response` with `{ "taskId": 2, "userMessage": "...", "responseStyle": "high" }`
+- Inspect user file: `data/users/<username>.json`
 
-- Small examples to use when writing or testing code:
-  - Get current user: GET `/api/users/me` with header `Authorization: Bearer <token>`.
-  - Simulate AI reply: POST `/api/ai/response` with JSON `{ "taskId": 2, "userMessage": "...", "responseStyle": "high" }` (authenticated).
-  - Inspect user file: `data/users/<username>.json` to see `task_set` and `conversation` shapes.
+## Gotchas
+- `DATA_DIR` is relative to repo root; ensure correct path in tests/containers.
+- Avoid large in-memory state in `active_sessions`—no persistence by default.
+- Update `README.md` if run instructions or credentials change.
 
-- Conventions & gotchas to respect:
-  - The code stores timestamps as ISO strings (`datetime.now().isoformat()`). Use consistent formatting.
-  - Passwords stored as SHA256 hashes via `hash_password()` in `app.py`. Do not change hashing format without migrating existing files.
-  - `app.py` assumes `DATA_DIR = 'data/users'` is relative to repo root. Tests or Docker containers should map working directory accordingly.
-  - Avoid introducing long-running in-memory state (e.g., large lists in `active_sessions`) without adding persistence or cleanup — the repo relies on small-scale local testing.
-
-- When you make changes:
-  - Update `README.md` if you change run instructions or default credentials.
-  - Add a short example (curl or requests snippet) demonstrating any new API behavior.
-  - If you modify the user JSON schema, include a migration helper and update `create_default_admin()` to be backward-compatible.
-
-If anything here is unclear or you'd like the document to include examples for a specific change (e.g., converting storage to SQLite, or integrating a real LLM), tell me which direction and I'll iterate the file.
+If you need more examples or clarification, request a specific scenario or file to be documented.
