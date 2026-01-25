@@ -26,8 +26,8 @@
     </script>
     <style>
         .chat-bubble-user {
-            background-color: #3B82F6;
-            color: white;
+            background-color: #DBEAFE;
+            color: #1E40AF;
             border-radius: 1rem;
             border-top-right-radius: 0;
             padding: 0.75rem 1rem;
@@ -335,9 +335,7 @@
                 <div class="p-4 border-b">
                     <div class="flex items-center justify-between">
                         <div class="flex items-center space-x-3">
-                            <div class="w-10 h-10 rounded-full bg-blue-500 bg-opacity-10 flex items-center justify-center">
-                                <i class="fa fa-robot text-blue-500"></i>
-                            </div>
+                            <img src="/avatar-ai.png" class="w-10 h-10 rounded-full object-cover" alt="AI">
                             <div>
                                 <h2 class="font-semibold text-blue-500">与AI助手对话</h2>
                                 <p id="ai-description" class="text-sm text-gray-500">请开始与AI进行对话</p>
@@ -2011,9 +2009,12 @@
                 messageDiv.innerHTML = `
                     <div class="flex items-start space-x-3">
                         <div class="flex-shrink-0">
-                            <div class="w-8 h-8 rounded-full ${isUser ? 'bg-blue-500' : 'bg-gray-300'} flex items-center justify-center">
-                                <i class="fa ${isUser ? 'fa-user text-white' : 'fa-robot text-gray-600'} text-sm"></i>
-                            </div>
+                            ${isUser ?
+                                `<div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center">
+                                    <i class="fa fa-user text-white text-sm"></i>
+                                </div>` :
+                                `<img src="/avatar-ai.png" class="w-8 h-8 rounded-full object-cover" alt="AI">`
+                            }
                         </div>
                         <div class="flex-1">
                             <div class="text-sm font-medium mb-1">${isUser ? '您' : 'AI助手'}</div>
@@ -2046,9 +2047,7 @@
                 messageDiv.innerHTML = `
                     <div class="flex items-start space-x-3">
                         <div class="flex-shrink-0">
-                            <div class="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
-                                <i class="fa fa-robot text-gray-600 text-sm"></i>
-                            </div>
+                            <img src="/avatar-ai.png" class="w-8 h-8 rounded-full object-cover" alt="AI">
                         </div>
                         <div class="flex-1">
                             <div class="text-sm font-medium mb-1">AI助手</div>
@@ -2072,9 +2071,7 @@
                 indicator.id = 'typing-indicator';
                 indicator.innerHTML = `
                     <div class="flex items-center space-x-3">
-                        <div class="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
-                            <i class="fa fa-robot text-gray-600 text-sm"></i>
-                        </div>
+                        <img src="/avatar-ai.png" class="w-8 h-8 rounded-full object-cover" alt="AI">
                         <div class="flex-1">
                             <div class="text-sm font-medium mb-1">AI助手</div>
                             <div class="typing-indicator">
