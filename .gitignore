@@ -1,0 +1,30 @@
+# --- Python 缓存 ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- 实验数据 (重点隐藏) ---
+# 隐藏所有存放被试聊天记录、日志和个人信息的文件夹
+data/users/
+data/logs/
+data/results/
+*.json
+*.csv
+# 如果你使用了本地数据库存放数据
+*.db
+*.sqlite3
+
+# --- 环境与秘钥 ---
+.env
+venv/
+env/
+.venv/
+# 隐藏 OpenAI/Anthropic API Key 配置文件
+config/keys.py
+secrets.json
+
+# --- 编辑器与系统 ---
+.vscode/
+.idea/
+.DS_Store

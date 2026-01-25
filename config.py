@@ -11,12 +11,37 @@ class Config:
     EXPERIMENT_CONFIG = {
         'countdown_time': 15 * 60,  # 15分钟对话时间
         'password': 'experiment123',  # 实验设置密码
-        'memory_groups': ['no_memory', 'short_memory', 'medium_memory', 'long_memory'],
-        'memory_tokens': {
-            'no_memory': 0,           # 无记忆：不传递任何历史上下文
-            'short_memory': 2000,     # 短期记忆：仅上一轮对话的后1/3
-            'medium_memory': 8000,    # 中期记忆：所有历史对话的摘要
-            'long_memory': 128000     # 长期记忆：完整历史对话
+        # 新的四级记忆架构（基于认知心理学理论）
+        'memory_groups': ['sensory_memory', 'working_memory', 'gist_memory', 'hybrid_memory'],
+        'memory_config': {
+            # L1: 感觉记忆 - 无编码，仅当前输入
+            'sensory_memory': {
+                'description': '感觉记忆（控制组）',
+                'theory': 'Atkinson-Shiffrin感觉寄存器',
+                'capacity': 0,
+                'turns': 0,
+            },
+            # L2: 工作记忆 - Miller 7±2 法则
+            'working_memory': {
+                'description': '工作记忆（7±2组块）',
+                'theory': 'Miller 1956',
+                'capacity': 7,  # 7轮对话
+                'turns': 7,
+            },
+            # L3: 要义记忆 - Verbatim → Gist 转化
+            'gist_memory': {
+                'description': '要义记忆（语义编码）',
+                'theory': 'Fuzzy Trace Theory',
+                'recent_turns': 3,  # 最近3轮保留原话
+                'gist_max_chars': 500,  # 要义摘要最大字数
+            },
+            # L4: 混合记忆 - 短时+长时检索
+            'hybrid_memory': {
+                'description': '混合记忆（联想检索）',
+                'theory': 'Tulving陈述性记忆',
+                'recent_turns': 3,  # 最近3轮（当前焦点）
+                'retrieval_top_k': 3,  # 检索最相关的3条历史
+            },
         },
         # 通义千问 API 配置
         'qwen_api_key': os.environ.get('QWEN_API_KEY', 'sk-2574182e8e0343d4a0fa1aaa181d42a8'),  # 需要设置环境变量或填入API Key
@@ -37,9 +62,27 @@ class Config:
         'default_response_style': 'high'
     }
 
-    # 记忆配置
-    MEMORY_CONFIG = {
-        'short_memory_ratio': 0.33,  # 短记忆组使用最近对话的1/3
-        'medium_memory_summary_max_tokens': 2000,  # 中记忆组摘要最大token数
-        'enable_adaptive_memory': True  # 是否启用自适应记忆
+    # 记忆操作配置
+    MEMORY_OPERATIONS = {
+        # 记忆读取权重 (α: 新鲜度, β: 相关性, γ: 重要性)
+        'sensory_memory': {'alpha': 0, 'beta': 0, 'gamma': 0},   # 无读取
+        'working_memory': {'alpha': 1, 'beta': 0, 'gamma': 0},   # 仅新鲜度
+        'gist_memory': {'alpha': 0, 'beta': 0, 'gamma': 1},      # 仅重要性
+        'hybrid_memory': {'alpha': 0.3, 'beta': 0.5, 'gamma': 0.2},  # 混合加权
+    }
+
+    # 要义生成配置
+    GIST_CONFIG = {
+        'summary_prompt_template': """请将以下对话历史压缩为{max_chars}字以内的要义摘要。
+
+要求：
+1. 保留核心语义和用户意图，去除具体措辞
+2. 提取用户画像特征（性格、偏好、关注点）
+3. 记录重要事件和情感状态
+4. 使用第三人称描述
+
+对话历史：
+{conversation}
+
+请输出要义摘要：""",
     }
