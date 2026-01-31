@@ -238,8 +238,7 @@ class DBManager:
         task_id: int,
         content: str,
         is_user: bool,
-        response_style: str = None,
-        embedding_id: str = None
+        response_style: str = None
     ) -> ChatMessage:
         """添加聊天消息"""
         message_id = f"msg_{datetime.utcnow().timestamp()}"
@@ -251,7 +250,6 @@ class DBManager:
             content=content,
             is_user=is_user,
             response_style=response_style,
-            embedding_id=embedding_id,
             timestamp=datetime.utcnow()
         )
 
