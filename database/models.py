@@ -170,6 +170,45 @@ class ExperimentLog(Base):
         return f"<ExperimentLog(user='{self.user_id}', event='{self.event_type}')>"
 
 
+class UserProfile(Base):
+    """用户画像表（L3 要义记忆专用）
+
+    存储从对话中提取的长期特质，支持增量更新
+    """
+    __tablename__ = 'user_profiles'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(50), ForeignKey('users.user_id', ondelete='CASCADE'), nullable=False)
+
+    # 画像内容（JSON 格式）
+    profile_data = Column(JSON, default=dict)
+    # 格式示例:
+    # {
+    #   "basic_info": {"age": 25, "occupation": "博士生"},
+    #   "preferences": ["素食", "喜欢爬山", "养猫"],
+    #   "constraints": ["对海鲜过敏", "工作日很忙"],
+    #   "goals": ["准备考博", "学习Python"],
+    #   "personality": ["内向", "完美主义"],
+    #   "social": ["养了一只猫", "和室友住"]
+    # }
+
+    # 最后更新的任务ID（用于增量更新）
+    last_consolidated_task_id = Column(Integer, default=0)
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 索引
+    __table_args__ = (
+        Index('idx_user_profile', 'user_id', unique=True),
+    )
+
+    def __repr__(self):
+        traits_count = sum(len(v) if isinstance(v, list) else 1 for v in (self.profile_data or {}).values())
+        return f"<UserProfile(user='{self.user_id}', traits={traits_count})>"
+
+
 # ============ 数据库初始化工具 ============
 
 def init_db(db_path: str = 'data/experiment.db'):

@@ -16,7 +16,7 @@ from functools import wraps
 from config import Config
 from services.llm_service import QwenManager, DeepSeekManager
 from database import init_db, get_session, DBManager
-from services import MemoryEngine, TimerService
+from services import MemoryEngine, TimerService, ConsolidationService
 
 # ============ Flask 应用初始化 ============
 
@@ -496,6 +496,31 @@ def submit_task(user, session, task_id):
 
         # 记录日志
         db.log_event(user.user_id, 'task_submit', task_id=task_id)
+
+        # 【新增】触发记忆固化（He et al. 2024）
+        # 在 Session 结束后，将短期记忆转化为长期记忆
+        try:
+            consolidation_service = ConsolidationService(db, llm_manager)
+            consolidation_stats = consolidation_service.consolidate_after_session(
+                user.user_id,
+                task_id,
+                user.memory_group
+            )
+
+            # 记录固化统计
+            print(f"[Consolidation] 固化完成: {consolidation_stats}")
+            db.log_event(
+                user.user_id,
+                'memory_consolidation',
+                task_id=task_id,
+                event_data=consolidation_stats
+            )
+
+        except Exception as e:
+            # 固化失败不影响任务提交
+            print(f"[Consolidation] 固化失败（不影响任务提交）: {e}")
+            import traceback
+            traceback.print_exc()
 
         return api_response(True)
     finally:

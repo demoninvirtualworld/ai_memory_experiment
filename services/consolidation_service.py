@@ -1,0 +1,471 @@
+"""
+记忆固化服务 (Consolidation Service)
+
+基于 He et al. (2024) 的理论：记忆固化应在 Session 结束后离线运行
+
+功能：
+- L3: 提取用户画像增量并更新
+- L4: 批量生成向量并存储
+"""
+
+import json
+from typing import Dict, List, Optional
+from datetime import datetime
+
+from database import DBManager
+from database.vector_store import VectorStore, get_vector_store
+
+
+class ConsolidationService:
+    """
+    记忆固化服务
+
+    在每次 Session（任务）结束后调用，将短期记忆转化为长期记忆
+    """
+
+    def __init__(self, db_manager: DBManager, llm_manager=None):
+        """
+        初始化固化服务
+
+        Args:
+            db_manager: 数据库管理器
+            llm_manager: LLM 管理器（用于生成摘要）
+        """
+        self.db = db_manager
+        self.llm = llm_manager
+        self.vector_store = get_vector_store(db_manager)
+
+    # ============ 主入口 ============
+
+    def consolidate_after_session(
+        self,
+        user_id: str,
+        task_id: int,
+        memory_group: str
+    ) -> Dict:
+        """
+        Session 结束后的记忆固化
+
+        Args:
+            user_id: 用户ID
+            task_id: 刚结束的任务ID
+            memory_group: 记忆组别
+
+        Returns:
+            固化结果统计
+        """
+        stats = {
+            'user_id': user_id,
+            'task_id': task_id,
+            'memory_group': memory_group,
+            'timestamp': datetime.utcnow().isoformat(),
+            'success': False,  # 默认失败，成功后改为 True
+            'action': 'no_action',
+            'error': None,
+            'error_type': None
+        }
+
+        try:
+            if memory_group == 'gist_memory':
+                # L3: 用户画像增量更新
+                print(f"[Consolidation] 开始 L3 固化: user={user_id}, task={task_id}")
+                result = self._consolidate_gist(user_id, task_id)
+                stats.update(result)
+
+            elif memory_group == 'hybrid_memory':
+                # L4: 批量向量生成
+                print(f"[Consolidation] 开始 L4 固化: user={user_id}, task={task_id}")
+                result = self._consolidate_vectors(user_id, task_id)
+                stats.update(result)
+
+            else:
+                # L1, L2 不需要固化
+                stats['action'] = 'no_consolidation_needed'
+
+            stats['success'] = True
+            print(f"[Consolidation] 固化成功: {stats}")
+
+        except Exception as e:
+            # 详细错误记录
+            stats['success'] = False
+            stats['error'] = str(e)
+            stats['error_type'] = type(e).__name__
+
+            # 错误分类
+            if 'API' in str(e) or 'timeout' in str(e).lower():
+                stats['error_category'] = 'api_failure'
+            elif 'JSON' in str(e) or 'json' in str(e).lower():
+                stats['error_category'] = 'llm_output_parsing_error'
+            elif 'database' in str(e).lower() or 'sql' in str(e).lower():
+                stats['error_category'] = 'database_error'
+            else:
+                stats['error_category'] = 'unknown_error'
+
+            # 打印详细错误信息
+            print(f"[Consolidation] ❌ 固化失败: {stats['error_category']}")
+            print(f"[Consolidation] 错误详情: {e}")
+            import traceback
+            traceback.print_exc()
+
+            # 记录到数据库（即使固化失败，也要记录日志）
+            try:
+                self.db.log_event(
+                    user_id,
+                    'consolidation_failed',
+                    task_id=task_id,
+                    event_data={
+                        'error': str(e),
+                        'error_type': stats['error_type'],
+                        'error_category': stats['error_category'],
+                        'memory_group': memory_group
+                    }
+                )
+            except:
+                # 如果连日志都记不了，至少打印出来
+                print(f"[Consolidation] ⚠️ 无法记录失败日志")
+
+        return stats
+
+    # ============ L3: 用户画像增量固化 ============
+
+    def _consolidate_gist(self, user_id: str, task_id: int) -> Dict:
+        """
+        L3 固化：提取用户画像增量并更新
+
+        理论依据：Fuzzy Trace Theory
+        - 保留语义本质（gist）
+        - 丢弃字面细节（verbatim）
+
+        实现：
+        1. 读取本次 session 的所有对话
+        2. 调用 LLM 提取用户特质
+        3. 与已有画像合并
+        4. 更新数据库
+        """
+        print(f"[Consolidation L3] 开始固化用户画像: user={user_id}, task={task_id}")
+
+        # 1. 获取本次 session 的消息
+        messages = self.db.get_task_messages(user_id, task_id)
+
+        if not messages:
+            return {'action': 'skip', 'reason': 'no_messages'}
+
+        # 2. 构建对话文本
+        conversation_text = self._format_messages_for_extraction(messages)
+
+        # 3. 获取已有画像
+        existing_profile = self._get_user_profile(user_id)
+
+        # 4. 调用 LLM 提取增量画像
+        if self.llm and hasattr(self.llm, 'chat_completion'):
+            profile_increment = self._extract_profile_increment(
+                conversation_text,
+                existing_profile,
+                task_id  # 传入任务ID用于溯源标注
+            )
+        else:
+            # 降级方案：规则提取
+            profile_increment = self._extract_profile_by_rules(conversation_text, task_id)
+
+        # 5. 合并画像
+        updated_profile = self._merge_profiles(existing_profile, profile_increment)
+
+        # 6. 保存到数据库
+        self._save_user_profile(user_id, updated_profile, task_id)
+
+        return {
+            'action': 'gist_consolidated',
+            'messages_processed': len(messages),
+            'profile_fields_updated': len(profile_increment.keys()),
+            'new_traits_count': sum(len(v) for v in profile_increment.values() if isinstance(v, list))
+        }
+
+    def _extract_profile_increment(
+        self,
+        conversation: str,
+        existing_profile: Dict,
+        task_id: int
+    ) -> Dict:
+        """
+        使用 LLM 提取用户画像增量
+
+        提示词设计：
+        - 只提取**新增**的特质（避免重复）
+        - 分类存储（基本信息、偏好、限制、目标等）
+        """
+        # 构建提示词（增加溯源标注）
+        prompt = f"""你是一个用户画像分析助手。请根据以下对话，提取用户的长期特质。
+
+**已知画像**：
+{json.dumps(existing_profile, ensure_ascii=False, indent=2)}
+
+**本次对话**（第 {task_id} 次任务）：
+{conversation}
+
+**任务**：
+1. 提取本次对话中**新出现**的用户特质（不要重复已知画像）
+2. **重要**：每个特质后面必须标注来源任务，格式为 "[Task N]"
+3. 按以下分类整理：
+   - basic_info: 基本信息（年龄、职业、身份等）
+   - preferences: 偏好和喜好（饮食、爱好、品味等）
+   - constraints: 限制和约束（过敏、时间限制、禁忌等）
+   - goals: 目标和计划（近期目标、长期规划等）
+   - personality: 性格特征（内向/外向、完美主义等）
+   - social: 社交关系（家人、朋友、宠物等）
+
+**输出格式示例**（纯 JSON，不要解释）：
+{{
+  "basic_info": {{"occupation": "博士生 [Task 1]"}},
+  "preferences": ["喜欢爬山 [Task 1]", "素食主义者 [Task 1]"],
+  "constraints": ["对海鲜过敏 [Task 1]"],
+  "goals": ["准备考博 [Task 1]"],
+  "personality": ["内向 [Task 1]"],
+  "social": ["养了一只猫 [Task 1]"]
+}}
+
+如果本次对话没有新特质，返回空 JSON {{}}.
+"""
+
+        try:
+            # 调用 LLM（增加超时控制）
+            response = self.llm.chat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,  # 低温度保证输出稳定
+                max_tokens=800
+            )
+
+            # 清理响应（移除可能的 markdown 代码块标记）
+            cleaned_response = response.strip()
+            if cleaned_response.startswith('```json'):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.startswith('```'):
+                cleaned_response = cleaned_response[3:]
+            if cleaned_response.endswith('```'):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+
+            # 解析 JSON
+            profile_increment = json.loads(cleaned_response)
+
+            # 验证格式
+            if not isinstance(profile_increment, dict):
+                print(f"[Consolidation] ⚠️ LLM 返回非字典格式，使用空画像")
+                return {}
+
+            return profile_increment
+
+        except json.JSONDecodeError as e:
+            print(f"[Consolidation] ❌ LLM 返回 JSON 格式错误: {e}")
+            print(f"[Consolidation] 原始输出（前 500 字符）:")
+            print(response[:500] if 'response' in locals() else "无响应")
+            return {}
+
+        except TimeoutError:
+            print(f"[Consolidation] ❌ LLM 调用超时")
+            return {}
+
+        except Exception as e:
+            print(f"[Consolidation] ❌ LLM 调用失败: {type(e).__name__}: {e}")
+            return {}
+
+    def _extract_profile_by_rules(self, conversation: str, task_id: int) -> Dict:
+        """
+        降级方案：基于规则的画像提取（当 LLM 不可用时）
+
+        使用简单的关键词匹配
+        """
+        profile = {
+            "preferences": [],
+            "constraints": [],
+            "goals": []
+        }
+
+        # 偏好关键词
+        preference_patterns = [
+            ("喜欢", "preferences"),
+            ("爱好", "preferences"),
+            ("最爱", "preferences"),
+            ("不喜欢", "constraints"),
+            ("讨厌", "constraints"),
+            ("过敏", "constraints"),
+            ("想要", "goals"),
+            ("打算", "goals"),
+            ("计划", "goals")
+        ]
+
+        lines = conversation.split('\n')
+        for line in lines:
+            if line.startswith('用户：'):
+                content = line[3:].strip()
+
+                for pattern, category in preference_patterns:
+                    if pattern in content:
+                        # 简单提取（实际应该用 NER）
+                        trait = content[:50]  # 截取前 50 字
+                        # 添加溯源标注
+                        trait_with_source = f"{trait} [Task {task_id}]"
+                        if trait and trait_with_source not in profile[category]:
+                            profile[category].append(trait_with_source)
+
+        return profile
+
+    def _merge_profiles(self, existing: Dict, increment: Dict) -> Dict:
+        """
+        合并已有画像和增量画像
+
+        策略：
+        - 字典类型：更新键值
+        - 列表类型：去重追加
+        """
+        merged = existing.copy()
+
+        for key, value in increment.items():
+            if key not in merged:
+                merged[key] = value
+            else:
+                if isinstance(value, dict):
+                    # 合并字典
+                    merged[key].update(value)
+                elif isinstance(value, list):
+                    # 去重追加列表
+                    existing_set = set(merged[key])
+                    for item in value:
+                        if item not in existing_set:
+                            merged[key].append(item)
+
+        return merged
+
+    def _get_user_profile(self, user_id: str) -> Dict:
+        """获取用户现有画像"""
+        return self.db.get_user_profile(user_id)
+
+    def _save_user_profile(self, user_id: str, profile: Dict, task_id: int):
+        """保存用户画像"""
+        print(f"[Consolidation] 画像已更新:")
+        print(json.dumps(profile, ensure_ascii=False, indent=2))
+
+        # 保存到数据库
+        self.db.save_user_profile(user_id, profile, task_id)
+
+    def _format_messages_for_extraction(self, messages) -> str:
+        """格式化消息用于画像提取"""
+        lines = []
+        for msg in messages:
+            role = "用户" if msg.is_user else "AI"
+            lines.append(f"{role}：{msg.content}")
+        return "\n".join(lines)
+
+    # ============ L4: 向量批量固化 ============
+
+    def _consolidate_vectors(self, user_id: str, task_id: int) -> Dict:
+        """
+        L4 固化：批量生成向量并存储
+
+        理论依据：Tulving 陈述性记忆
+        - 向量化后的记忆支持语义检索
+
+        实现：
+        1. 找到本次 session 中未向量化的消息
+        2. 批量调用 DashScope Embedding API
+        3. 更新 chat_messages.embedding 字段
+        """
+        print(f"[Consolidation L4] 开始批量向量化: user={user_id}, task={task_id}")
+
+        # 1. 获取未向量化的消息
+        messages = self.db.get_task_messages(user_id, task_id)
+
+        if not messages:
+            return {'action': 'skip', 'reason': 'no_messages'}
+
+        # 过滤出未向量化的消息
+        unvectorized = [msg for msg in messages if not msg.embedding]
+
+        if not unvectorized:
+            return {
+                'action': 'vectors_already_exist',
+                'total_messages': len(messages)
+            }
+
+        # 2. 批量生成向量
+        texts = [msg.content for msg in unvectorized]
+        embeddings = self.vector_store.generate_embeddings_batch(texts)
+
+        # 3. 更新数据库
+        success_count = 0
+        fail_count = 0
+
+        for msg, embedding in zip(unvectorized, embeddings):
+            if embedding:
+                # 计算重要性分数（简单规则）
+                importance = self._calculate_importance(msg.content, msg.is_user)
+
+                # 更新数据库
+                if self.vector_store.update_message_embedding(
+                    msg.message_id,
+                    embedding,
+                    importance
+                ):
+                    success_count += 1
+                else:
+                    fail_count += 1
+            else:
+                fail_count += 1
+
+        return {
+            'action': 'vectors_consolidated',
+            'total_messages': len(messages),
+            'unvectorized_before': len(unvectorized),
+            'success': success_count,
+            'failed': fail_count
+        }
+
+    def _calculate_importance(self, content: str, is_user: bool) -> float:
+        """
+        计算消息的重要性分数
+
+        简单规则（可以改为 LLM 判断）：
+        - 用户的自我披露：高重要性
+        - 包含关键词（姓名、情感、决策）：高重要性
+        - AI 的回复：中等重要性
+        """
+        importance = 0.5  # 基础分
+
+        if is_user:
+            importance += 0.2  # 用户消息更重要
+
+            # 关键词匹配
+            high_importance_keywords = [
+                '我是', '我叫', '我的', '我觉得', '我认为', '我决定',
+                '喜欢', '讨厌', '希望', '担心', '害怕', '开心', '难过'
+            ]
+
+            if any(kw in content for kw in high_importance_keywords):
+                importance += 0.2
+
+            # 长消息更可能包含重要信息
+            if len(content) > 50:
+                importance += 0.1
+
+        # 限制在 0-1 范围
+        return min(1.0, importance)
+
+    # ============ 工具方法 ============
+
+    def get_consolidation_stats(self, user_id: str) -> Dict:
+        """获取固化统计信息"""
+        stats = {
+            'user_id': user_id
+        }
+
+        # L3 画像统计
+        profile = self._get_user_profile(user_id)
+        stats['profile_traits_count'] = sum(
+            len(v) if isinstance(v, list) else 1
+            for v in profile.values()
+        )
+
+        # L4 向量统计
+        vector_stats = self.vector_store.get_stats(user_id)
+        stats.update(vector_stats)
+
+        return stats

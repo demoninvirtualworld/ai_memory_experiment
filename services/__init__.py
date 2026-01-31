@@ -5,11 +5,13 @@
 - memory_engine: Level 1-4 记忆处理
 - timer_service: 计时器和 120s 间隔管理
 - llm_service: LLM 调用封装 (QwenManager, DeepSeekManager)
+- consolidation_service: 记忆固化服务 (L3/L4)
 """
 
 from .memory_engine import MemoryEngine
 from .timer_service import TimerService, TimerState
 from .llm_service import QwenManager, DeepSeekManager, estimate_importance_score
+from .consolidation_service import ConsolidationService
 
 __all__ = [
     'MemoryEngine',
@@ -18,4 +20,5 @@ __all__ = [
     'QwenManager',
     'DeepSeekManager',
     'estimate_importance_score',
+    'ConsolidationService',
 ]

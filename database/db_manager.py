@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from .models import User, UserTask, ChatMessage, ExperimentLog
+from .models import User, UserTask, ChatMessage, ExperimentLog, UserProfile
 
 
 class DBManager:
@@ -463,3 +463,93 @@ class DBManager:
             'total_messages': total_messages,
             'created_at': user.created_at.isoformat() if user.created_at else None
         }
+
+    # ============ 用户画像操作（L3 要义记忆专用） ============
+
+    def get_user_profile(self, user_id: str) -> Dict[str, Any]:
+        """
+        获取用户画像
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            画像数据（Dict），如果不存在则返回空画像
+        """
+        profile = self.session.query(UserProfile).filter(
+            UserProfile.user_id == user_id
+        ).first()
+
+        if profile:
+            return profile.profile_data or {}
+
+        # 返回默认空画像
+        return {
+            "basic_info": {},
+            "preferences": [],
+            "constraints": [],
+            "goals": [],
+            "personality": [],
+            "social": []
+        }
+
+    def save_user_profile(
+        self,
+        user_id: str,
+        profile_data: Dict[str, Any],
+        last_task_id: int = None
+    ) -> bool:
+        """
+        保存或更新用户画像
+
+        Args:
+            user_id: 用户ID
+            profile_data: 画像数据
+            last_task_id: 最后更新的任务ID
+
+        Returns:
+            是否成功
+        """
+        try:
+            profile = self.session.query(UserProfile).filter(
+                UserProfile.user_id == user_id
+            ).first()
+
+            if profile:
+                # 更新现有画像
+                profile.profile_data = profile_data
+                profile.updated_at = datetime.utcnow()
+                if last_task_id is not None:
+                    profile.last_consolidated_task_id = last_task_id
+            else:
+                # 创建新画像
+                profile = UserProfile(
+                    user_id=user_id,
+                    profile_data=profile_data,
+                    last_consolidated_task_id=last_task_id or 0
+                )
+                self.session.add(profile)
+
+            self.session.commit()
+            return True
+
+        except Exception as e:
+            print(f"[DBManager] 保存用户画像失败: {e}")
+            self.session.rollback()
+            return False
+
+    def get_profile_last_consolidated_task(self, user_id: str) -> int:
+        """
+        获取用户画像最后一次固化的任务ID
+
+        Args:
+            user_id: 用户ID
+
+        Returns:
+            任务ID，如果从未固化则返回 0
+        """
+        profile = self.session.query(UserProfile).filter(
+            UserProfile.user_id == user_id
+        ).first()
+
+        return profile.last_consolidated_task_id if profile else 0

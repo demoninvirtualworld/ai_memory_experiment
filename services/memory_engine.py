@@ -158,12 +158,18 @@ class MemoryEngine:
 
         context_parts = []
 
-        # 1. 更早的历史 → 要义摘要 (Gist)
+        # 1. 更早的历史 → 读取固化的用户画像（Gist）
         if len(turns) > self.RECENT_VERBATIM_TURNS:
-            older_turns = turns[:-self.RECENT_VERBATIM_TURNS]
-            gist = self._generate_gist_summary(older_turns)
+            # 优先读取固化的画像（避免实时生成延迟）
+            gist = self._get_consolidated_gist(user_id)
+
+            # 如果画像不存在，降级为实时生成
+            if not gist:
+                older_turns = turns[:-self.RECENT_VERBATIM_TURNS]
+                gist = self._generate_gist_summary(older_turns)
+
             if gist:
-                context_parts.append(f"[历史要义]\n{gist}")
+                context_parts.append(f"[用户画像]\n{gist}")
 
         # 2. 最近 N 轮 → 保留原话 (Verbatim)
         recent_turns = turns[-self.RECENT_VERBATIM_TURNS:]
@@ -173,6 +179,58 @@ class MemoryEngine:
                 context_parts.append(f"[近期对话]\n{verbatim}")
 
         return "\n\n".join(context_parts)
+
+    def _get_consolidated_gist(self, user_id: str) -> str:
+        """
+        读取固化的用户画像（L3 专用）
+
+        Returns:
+            格式化的画像文本，如果不存在则返回空字符串
+        """
+        try:
+            profile = self.db.get_user_profile(user_id)
+
+            if not profile or not any(profile.values()):
+                return ""
+
+            # 格式化画像为自然语言
+            lines = []
+
+            if profile.get('basic_info'):
+                info = profile['basic_info']
+                if info:
+                    lines.append("基本信息：" + "，".join(f"{k}: {v}" for k, v in info.items()))
+
+            if profile.get('preferences'):
+                prefs = profile['preferences']
+                if prefs:
+                    lines.append("偏好：" + "、".join(prefs))
+
+            if profile.get('constraints'):
+                constraints = profile['constraints']
+                if constraints:
+                    lines.append("限制：" + "、".join(constraints))
+
+            if profile.get('goals'):
+                goals = profile['goals']
+                if goals:
+                    lines.append("目标：" + "、".join(goals))
+
+            if profile.get('personality'):
+                personality = profile['personality']
+                if personality:
+                    lines.append("性格：" + "、".join(personality))
+
+            if profile.get('social'):
+                social = profile['social']
+                if social:
+                    lines.append("社交：" + "、".join(social))
+
+            return "\n".join(lines) if lines else ""
+
+        except Exception as e:
+            print(f"[MemoryEngine] 读取固化画像失败: {e}")
+            return ""
 
     # ============ L4: 混合记忆 ============
 
