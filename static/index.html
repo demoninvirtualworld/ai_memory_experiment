@@ -8,6 +8,8 @@
     <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
     <!-- Markdown渲染库 -->
     <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.1/dist/markdown-it.min.js"></script>
+    <!-- 问卷配置 -->
+    <script src="/questionnaire_config.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -114,6 +116,40 @@
         }
         .hidden {
             display: none !important;
+        }
+
+        /* 问卷样式 */
+        #survey-content select:focus,
+        #survey-content textarea:focus {
+            outline: none;
+            border-color: #3B82F6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        /* IOS量表圆圈悬停效果 */
+        #survey-content input[type="radio"]:checked + div svg circle {
+            transition: all 0.3s ease;
+        }
+
+        /* 语义差异量表按钮样式 */
+        #survey-content input[type="radio"] + div {
+            transition: all 0.2s ease;
+        }
+
+        /* 问卷section标题样式 */
+        #survey-content h4 {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        /* 重要section高亮 */
+        .border-yellow-400 {
+            animation: pulse-border 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-border {
+            0%, 100% { border-color: #FBBF24; }
+            50% { border-color: #F59E0B; }
         }
 
         /* Markdown 内容样式 */
@@ -592,63 +628,7 @@
                 </div>
 
                 <div id="survey-content" class="space-y-6">
-                    <div class="bg-white border rounded-lg p-4">
-                        <h4 class="font-semibold text-blue-500 mb-3">心智感知</h4>
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-500 mb-2">这个AI似乎有它自己的信念</label>
-                                <select class="w-full border border-gray-300 rounded-lg px-3 py-2 mind-perception-q1">
-                                    <option value="1">非常不同意</option>
-                                    <option value="2">不同意</option>
-                                    <option value="3" selected>中立</option>
-                                    <option value="4">同意</option>
-                                    <option value="5">非常同意</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-500 mb-2">这个AI能够体验情感</label>
-                                <select class="w-full border border-gray-300 rounded-lg px-3 py-2 mind-perception-q2">
-                                    <option value="1">非常不同意</option>
-                                    <option value="2">不同意</option>
-                                    <option value="3" selected>中立</option>
-                                    <option value="4">同意</option>
-                                    <option value="5">非常同意</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="bg-white border rounded-lg p-4">
-                        <h4 class="font-semibold text-blue-500 mb-3">亲密度</h4>
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-500 mb-2">我感觉与这个AI很亲近</label>
-                                <select class="w-full border border-gray-300 rounded-lg px-3 py-2 intimacy-q1">
-                                    <option value="1">非常不同意</option>
-                                    <option value="2">不同意</option>
-                                    <option value="3" selected>中立</option>
-                                    <option value="4">同意</option>
-                                    <option value="5">非常同意</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="bg-white border rounded-lg p-4">
-                        <h4 class="font-semibold text-blue-500 mb-3">信任感</h4>
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-500 mb-2">我信任这个AI给出的建议</label>
-                                <select class="w-full border border-gray-300 rounded-lg px-3 py-2 trust-q1">
-                                    <option value="1">非常不同意</option>
-                                    <option value="2">不同意</option>
-                                    <option value="3" selected>中立</option>
-                                    <option value="4">同意</option>
-                                    <option value="5">非常同意</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
+                    <!-- 问卷内容将通过JavaScript动态生成 -->
                 </div>
 
                 <div class="flex justify-end space-x-3 pt-6 border-t mt-6">
@@ -2510,6 +2490,9 @@
                     return;
                 }
 
+                // 渲染问卷内容
+                this.renderQuestionnaire(this.appState.currentTaskId);
+
                 if (this.elements.surveyModal) {
                     this.elements.surveyModal.classList.remove('hidden');
                 }
@@ -2521,21 +2504,222 @@
                 }
             }
 
+            // 动态渲染问卷
+            renderQuestionnaire(taskId) {
+                const config = QUESTIONNAIRE_CONFIG[taskId];
+                if (!config) {
+                    console.error('未找到任务', taskId, '的问卷配置');
+                    return;
+                }
+
+                const surveyContent = document.getElementById('survey-content');
+                if (!surveyContent) return;
+
+                let html = '';
+
+                // 渲染各个section
+                config.sections.forEach(section => {
+                    html += `<div class="bg-white border ${section.important ? 'border-yellow-400 border-2' : 'border-gray-200'} rounded-lg p-4">`;
+                    html += `<h4 class="font-semibold text-blue-500 mb-2">${section.title}</h4>`;
+
+                    if (section.description) {
+                        html += `<p class="text-xs text-gray-500 mb-3">${section.description}</p>`;
+                    }
+
+                    html += `<div class="space-y-4">`;
+
+                    // IOS视觉量表
+                    if (section.type === 'visual_ios') {
+                        html += this.renderIOSScale(section);
+                    }
+                    // 开放性问题
+                    else if (section.type === 'open_ended') {
+                        html += this.renderOpenEnded(section);
+                    }
+                    // 常规Likert量表
+                    else {
+                        section.questions.forEach(q => {
+                            html += this.renderLikertQuestion(section, q);
+                        });
+                    }
+
+                    html += `</div></div>`;
+                });
+
+                surveyContent.innerHTML = html;
+            }
+
+            // 渲染IOS视觉量表
+            renderIOSScale(section) {
+                let html = `
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-3">${section.question}</label>
+                        <div class="flex items-center justify-between gap-2">
+                `;
+
+                section.options.forEach(opt => {
+                    const size = 30 + opt.value * 5; // 渐进增大
+                    html += `
+                        <label class="flex flex-col items-center cursor-pointer group">
+                            <input type="radio" name="${section.id}" value="${opt.value}"
+                                   class="hidden peer" ${opt.value === 4 ? 'checked' : ''}>
+                            <div class="relative" style="width: ${size}px; height: ${size}px;">
+                                <svg class="absolute inset-0" viewBox="0 0 100 100">
+                                    <circle cx="50" cy="50" r="45" fill="#E5E7EB"
+                                            class="peer-checked:fill-blue-500 group-hover:fill-blue-300 transition-colors"/>
+                                    ${opt.value > 3 ? `<circle cx="65" cy="50" r="35" fill="#E5E7EB" class="peer-checked:fill-blue-400 group-hover:fill-blue-200 transition-colors"/>` : ''}
+                                </svg>
+                            </div>
+                            <span class="text-xs mt-1 text-gray-500">${opt.label || opt.value}</span>
+                        </label>
+                    `;
+                });
+
+                html += `</div></div>`;
+                return html;
+            }
+
+            // 渲染开放性问题
+            renderOpenEnded(section) {
+                let html = '';
+                section.questions.forEach(q => {
+                    html += `
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">${q.text}</label>
+                            <textarea
+                                class="w-full border border-gray-300 rounded-lg px-3 py-2 min-h-[100px] focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                data-section="${section.id}"
+                                data-question="${q.id}"
+                                placeholder="${q.placeholder || ''}"
+                            ></textarea>
+                        </div>
+                    `;
+                });
+                return html;
+            }
+
+            // 渲染Likert问题
+            renderLikertQuestion(section, question) {
+                const scaleType = section.scale || '7point';
+                const options = SCALE_OPTIONS[scaleType] || SCALE_OPTIONS['7point'];
+                const defaultIndex = Math.floor(options.length / 2);
+
+                let html = `<div>`;
+
+                // 问题文本
+                html += `<label class="block text-sm font-medium text-gray-700 mb-2">`;
+                html += question.text;
+                if (question.subtitle) {
+                    html += `<span class="text-xs text-gray-500 ml-2">(${question.subtitle})</span>`;
+                }
+                html += `</label>`;
+
+                // 语义差异量表（特殊渲染）
+                if (scaleType === 'semantic_differential') {
+                    html += `
+                        <div class="flex items-center justify-between gap-2 mb-2">
+                            <span class="text-xs text-gray-600 font-medium">${question.left}</span>
+                            <span class="text-xs text-gray-600 font-medium">${question.right}</span>
+                        </div>
+                        <div class="flex items-center justify-between gap-1">
+                    `;
+
+                    options.forEach((opt, idx) => {
+                        html += `
+                            <label class="flex-1 cursor-pointer">
+                                <input type="radio" name="${section.id}_${question.id}"
+                                       value="${opt.value}" class="hidden peer"
+                                       ${idx === defaultIndex ? 'checked' : ''}>
+                                <div class="text-center py-2 rounded border border-gray-300
+                                           peer-checked:bg-blue-500 peer-checked:text-white peer-checked:border-blue-600
+                                           hover:bg-blue-100 transition-colors text-xs">
+                                    ${opt.label}
+                                </div>
+                            </label>
+                        `;
+                    });
+
+                    html += `</div>`;
+                }
+                // 普通Likert量表
+                else {
+                    html += `<select class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                     data-section="${section.id}"
+                                     data-question="${question.id}">`;
+
+                    options.forEach((opt, idx) => {
+                        html += `<option value="${opt.value}" ${idx === defaultIndex ? 'selected' : ''}>${opt.label}</option>`;
+                    });
+
+                    html += `</select>`;
+                }
+
+                html += `</div>`;
+                return html;
+            }
+
+            // 收集问卷数据
+            collectQuestionnaireData() {
+                const data = {
+                    task_id: this.appState.currentTaskId,
+                    timestamp: new Date().toISOString(),
+                    responses: {}
+                };
+
+                // 收集所有select元素的数据
+                document.querySelectorAll('#survey-content select[data-section]').forEach(select => {
+                    const section = select.dataset.section;
+                    const question = select.dataset.question;
+
+                    if (!data.responses[section]) {
+                        data.responses[section] = {};
+                    }
+                    data.responses[section][question] = parseInt(select.value);
+                });
+
+                // 收集所有radio按钮的数据
+                document.querySelectorAll('#survey-content input[type="radio"][name]').forEach(radio => {
+                    if (radio.checked) {
+                        const name = radio.name;
+                        const value = parseInt(radio.value) || radio.value;
+
+                        // 解析section和question
+                        if (name.includes('_')) {
+                            const [section, question] = name.split('_');
+                            if (!data.responses[section]) {
+                                data.responses[section] = {};
+                            }
+                            data.responses[section][question] = value;
+                        } else {
+                            // IOS量表
+                            if (!data.responses[name]) {
+                                data.responses[name] = {};
+                            }
+                            data.responses[name]['ios_score'] = value;
+                        }
+                    }
+                });
+
+                // 收集所有textarea的数据
+                document.querySelectorAll('#survey-content textarea[data-section]').forEach(textarea => {
+                    const section = textarea.dataset.section;
+                    const question = textarea.dataset.question;
+
+                    if (!data.responses[section]) {
+                        data.responses[section] = {};
+                    }
+                    data.responses[section][question] = textarea.value.trim();
+                });
+
+                return data;
+            }
+
             async submitSurvey() {
                 try {
                     // 收集问卷数据
-                    const questionnaireData = {
-                        mind_perception: {
-                            q1: document.querySelector('.mind-perception-q1')?.value || '3',
-                            q2: document.querySelector('.mind-perception-q2')?.value || '3'
-                        },
-                        intimacy: {
-                            q1: document.querySelector('.intimacy-q1')?.value || '3'
-                        },
-                        trust: {
-                            q1: document.querySelector('.trust-q1')?.value || '3'
-                        }
-                    };
+                    const questionnaireData = this.collectQuestionnaireData();
+
+                    console.log('提交问卷数据:', questionnaireData);
 
                     // 提交任务
                     await ApiService.submitTask(
