@@ -7,22 +7,25 @@
 - DashScope Embedding API (通义千问 text-embedding-v3)
 - 向量存入 SQLite chat_messages.embedding 字段
 - Numpy 余弦相似度计算
-- 加权检索：Score = α·Recency + β·Similarity + γ·Importance
+- 动态遗忘曲线检索（基于CHI'24 Hou et al.）：
+  公式: p_n(t) = [1 - exp(-r·e^{-t/g_n})] / (1 - e^{-1})
+  固化更新: g_n = g_{n-1} + S(t), S(t) = (1-e^{-t})/(1+e^{-t})
 """
 
 import json
+import math
 import requests
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from config import Config
 
 
 @dataclass
 class MemoryItem:
-    """检索结果条目"""
+    """检索结果条目（L4 动态遗忘曲线增强版）"""
     message_id: str
     user_id: str
     task_id: int
@@ -33,6 +36,11 @@ class MemoryItem:
     similarity_score: float = 0.0
     recency_score: float = 0.0
     final_score: float = 0.0
+    # 动态遗忘曲线字段
+    consolidation_g: float = 1.0       # 固化系数 g_n
+    recall_count: int = 0              # 召回次数 n
+    recall_probability: float = 0.0    # 召回概率 p(t)
+    days_since_last_recall: float = 0.0  # 距上次召回天数
 
     def to_dict(self) -> Dict:
         return {
@@ -46,7 +54,158 @@ class MemoryItem:
             'similarity_score': round(self.similarity_score, 3),
             'recency_score': round(self.recency_score, 3),
             'final_score': round(self.final_score, 3),
+            # 动态遗忘曲线字段
+            'consolidation_g': round(self.consolidation_g, 3),
+            'recall_count': self.recall_count,
+            'recall_probability': round(self.recall_probability, 3),
+            'days_since_last_recall': round(self.days_since_last_recall, 2),
         }
+
+
+class DynamicMemoryRecall:
+    """
+    动态记忆召回模型（基于CHI'24 Hou et al.）
+
+    核心公式：
+    - 召回概率: p_n(t) = [1 - exp(-r · e^{-t/g_n})] / (1 - e^{-1})
+    - 固化更新: g_n = g_{n-1} + S(t), S(t) = (1-e^{-t})/(1+e^{-t})
+
+    其中:
+    - r = 语义相似度 (cosine similarity, 0-1)
+    - t = 距上次召回的时间间隔（天）
+    - g_n = 累积固化强度（召回次数越多，g越大，衰减越慢）
+    """
+
+    def __init__(
+        self,
+        initial_g: float = 1.0,
+        recall_threshold: float = 0.86,
+        time_unit: str = 'days'
+    ):
+        """
+        初始化动态记忆召回模型
+
+        Args:
+            initial_g: 初始固化系数 g_0 (默认 1.0)
+            recall_threshold: 召回概率阈值 k (默认 0.86，CHI论文建议值)
+            time_unit: 时间单位 ('days', 'hours', 'seconds')
+        """
+        self.initial_g = initial_g
+        self.recall_threshold = recall_threshold
+        self.time_unit = time_unit
+
+    def calculate_recall_probability(
+        self,
+        relevance: float,
+        elapsed_time: float,
+        consolidation_g: float = None
+    ) -> float:
+        """
+        计算召回概率（CHI论文公式8）
+
+        p_n(t) = [1 - exp(-r · e^{-t/g_n})] / (1 - e^{-1})
+
+        Args:
+            relevance: r - 语义相似度 (0-1)
+            elapsed_time: t - 距上次召回的时间（单位由time_unit决定）
+            consolidation_g: g_n - 当前固化系数
+
+        Returns:
+            召回概率 (0-1)
+        """
+        if consolidation_g is None or consolidation_g <= 0:
+            consolidation_g = self.initial_g
+
+        # 避免除零
+        if consolidation_g == 0:
+            consolidation_g = 0.001
+
+        # 指数衰减项: e^{-t/g_n}
+        decay_term = math.exp(-elapsed_time / consolidation_g)
+
+        # 召回概率分子: 1 - exp(-r · decay_term)
+        numerator = 1 - math.exp(-relevance * decay_term)
+
+        # 归一化分母: 1 - e^{-1} ≈ 0.632
+        denominator = 1 - math.exp(-1)
+
+        probability = numerator / denominator
+
+        # 确保在 [0, 1] 范围内
+        return max(0.0, min(1.0, probability))
+
+    def update_consolidation(
+        self,
+        current_g: float,
+        recall_interval: float
+    ) -> float:
+        """
+        更新固化系数（CHI论文公式9）
+
+        g_n = g_{n-1} + S(t)
+        S(t) = (1 - e^{-t}) / (1 + e^{-t})  (修正sigmoid)
+
+        召回间隔越长，S(t)越大，固化强度增加越多
+        这模拟了"间隔效应"：间隔较长的重复比间隔较短的重复更有效
+
+        Args:
+            current_g: 当前固化系数 g_{n-1}
+            recall_interval: 距上次召回的时间间隔
+
+        Returns:
+            更新后的固化系数 g_n
+        """
+        t = max(0.001, recall_interval)  # 避免 t=0
+
+        # 修正sigmoid: S(t) = (1 - e^{-t}) / (1 + e^{-t})
+        # 当 t → 0: S(t) → 0
+        # 当 t → ∞: S(t) → 1
+        s_t = (1 - math.exp(-t)) / (1 + math.exp(-t))
+
+        return current_g + s_t
+
+    def should_recall(self, probability: float) -> bool:
+        """
+        判断是否应该触发召回
+
+        Args:
+            probability: 召回概率
+
+        Returns:
+            是否超过阈值
+        """
+        return probability >= self.recall_threshold
+
+    def calculate_elapsed_days(
+        self,
+        last_recall_at: datetime,
+        current_time: datetime = None
+    ) -> float:
+        """
+        计算距上次召回的天数
+
+        Args:
+            last_recall_at: 上次召回时间
+            current_time: 当前时间（默认 now）
+
+        Returns:
+            天数（浮点数）
+        """
+        if current_time is None:
+            current_time = datetime.utcnow()
+
+        if last_recall_at is None:
+            # 如果从未被召回，使用消息创建时间
+            return 1.0  # 默认1天
+
+        delta = current_time - last_recall_at
+
+        if self.time_unit == 'days':
+            return delta.total_seconds() / 86400.0
+        elif self.time_unit == 'hours':
+            return delta.total_seconds() / 3600.0
+        else:
+            return delta.total_seconds()
 
 
 class DashScopeEmbedding:
@@ -173,10 +332,15 @@ def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
 
 class VectorStore:
     """
-    向量存储管理器
+    向量存储管理器（L4 动态遗忘曲线增强版）
 
-    加权检索公式: Score = α·Recency + β·Similarity + γ·Importance
-    权重: α=0.3, β=0.5, γ=0.2 (从 config.py 读取)
+    检索策略:
+    1. 旧版静态加权: Score = α·Recency + β·Similarity + γ·Importance
+    2. 新版动态遗忘曲线（CHI'24）: p_n(t) = [1-exp(-r·e^{-t/g_n})]/(1-e^{-1})
+
+    使用动态遗忘曲线时:
+    - 概率阈值触发召回（而非简单Top-K）
+    - 召回后更新固化系数（越回忆越牢固）
     """
 
     # 从 config.py 读取权重
@@ -184,6 +348,17 @@ class VectorStore:
         'alpha': 0.3,
         'beta': 0.5,
         'gamma': 0.2
+    })
+
+    # 从 config.py 读取遗忘曲线配置
+    FORGETTING_CURVE_CONFIG = Config.EXPERIMENT_CONFIG.get('memory_config', {}).get(
+        'hybrid_memory', {}
+    ).get('forgetting_curve', {
+        'enabled': True,
+        'initial_g': 1.0,
+        'recall_threshold': 0.86,
+        'time_unit': 'days',
+        'update_on_recall': True
     })
 
     def __init__(self, db_manager=None):
@@ -195,6 +370,13 @@ class VectorStore:
         """
         self.db = db_manager
         self.embedding_fn = DashScopeEmbedding()
+
+        # 初始化动态记忆召回模型
+        self.recall_model = DynamicMemoryRecall(
+            initial_g=self.FORGETTING_CURVE_CONFIG.get('initial_g', 1.0),
+            recall_threshold=self.FORGETTING_CURVE_CONFIG.get('recall_threshold', 0.86),
+            time_unit=self.FORGETTING_CURVE_CONFIG.get('time_unit', 'days')
+        )
 
     def set_db_manager(self, db_manager):
         """设置数据库管理器"""
@@ -292,6 +474,210 @@ class VectorStore:
         # 5. 按分数排序，取 Top-K
         results.sort(key=lambda x: x.final_score, reverse=True)
         return results[:top_k]
+
+    def search_with_forgetting_curve(
+        self,
+        user_id: str,
+        query: str,
+        exclude_task_id: int = None,
+        top_k: int = 5,
+        update_on_recall: bool = True
+    ) -> List[MemoryItem]:
+        """
+        动态遗忘曲线检索（CHI'24 Hou et al.）
+
+        核心公式:
+        - 召回概率: p_n(t) = [1 - exp(-r · e^{-t/g_n})] / (1 - e^{-1})
+        - 固化更新: g_n = g_{n-1} + S(t)
+
+        Args:
+            user_id: 用户ID
+            query: 查询文本
+            exclude_task_id: 排除的任务ID（当前任务）
+            top_k: 最大返回数量（在阈值筛选后）
+            update_on_recall: 是否在召回后更新固化系数
+
+        Returns:
+            符合召回阈值的记忆列表（按召回概率排序）
+        """
+        if not self.db:
+            print("[VectorStore] 数据库未初始化")
+            return []
+
+        # 1. 生成查询向量
+        query_embedding = self.embedding_fn.embed_single(query)
+        if not query_embedding:
+            print("[VectorStore] 查询向量生成失败，降级为静态检索")
+            return self.search_weighted(user_id, query, exclude_task_id, top_k)
+
+        # 2. 获取用户所有有向量的历史消息（含动态字段）
+        messages = self._get_user_messages_with_dynamic_fields(user_id, exclude_task_id)
+        if not messages:
+            return []
+
+        current_time = datetime.utcnow()
+        recalled_memories = []
+        recall_model = self.recall_model
+
+        # 3. 计算每条消息的召回概率
+        for msg in messages:
+            # 语义相似度 r
+            similarity = cosine_similarity(query_embedding, msg['embedding'])
+
+            # 距上次召回的时间 t（天）
+            last_recall = msg.get('last_recall_at') or msg['timestamp']
+            elapsed_days = recall_model.calculate_elapsed_days(last_recall, current_time)
+
+            # 固化系数 g_n
+            consolidation_g = msg.get('consolidation_g', 1.0)
+
+            # 计算召回概率
+            recall_prob = recall_model.calculate_recall_probability(
+                relevance=similarity,
+                elapsed_time=elapsed_days,
+                consolidation_g=consolidation_g
+            )
+
+            # 创建 MemoryItem
+            memory = MemoryItem(
+                message_id=msg['message_id'],
+                user_id=msg['user_id'],
+                task_id=msg['task_id'],
+                content=msg['content'],
+                timestamp=msg['timestamp'],
+                is_user=msg['is_user'],
+                importance_score=msg.get('importance_score', 0.5),
+                similarity_score=similarity,
+                consolidation_g=consolidation_g,
+                recall_count=msg.get('recall_count', 0),
+                recall_probability=recall_prob,
+                days_since_last_recall=elapsed_days,
+                final_score=recall_prob  # 使用召回概率作为最终分数
+            )
+
+            # 4. 阈值筛选：只有超过阈值的才被召回
+            if recall_model.should_recall(recall_prob):
+                recalled_memories.append(memory)
+
+                # 5. 更新固化系数（被召回后变得更难遗忘）
+                if update_on_recall and self.FORGETTING_CURVE_CONFIG.get('update_on_recall', True):
+                    new_g = recall_model.update_consolidation(consolidation_g, elapsed_days)
+                    new_recall_count = msg.get('recall_count', 0) + 1
+
+                    self._update_memory_dynamic_fields(
+                        msg['message_id'],
+                        consolidation_g=new_g,
+                        recall_count=new_recall_count,
+                        last_recall_at=current_time
+                    )
+
+        # 6. 按召回概率排序，取 Top-K
+        recalled_memories.sort(key=lambda x: x.recall_probability, reverse=True)
+
+        # 日志输出
+        print(f"[VectorStore] 动态遗忘曲线检索: "
+              f"候选={len(messages)}, 超阈值={len(recalled_memories)}, "
+              f"阈值={recall_model.recall_threshold}")
+
+        return recalled_memories[:top_k]
+
+    def _get_user_messages_with_dynamic_fields(
+        self,
+        user_id: str,
+        exclude_task_id: int = None
+    ) -> List[Dict]:
+        """
+        获取用户所有有向量的消息（含动态遗忘曲线字段）
+
+        Returns:
+            消息列表，包含: embedding, consolidation_g, recall_count, last_recall_at
+        """
+        from database import ChatMessage
+
+        try:
+            query = self.db.session.query(ChatMessage).filter(
+                ChatMessage.user_id == user_id,
+                ChatMessage.embedding.isnot(None)
+            )
+
+            if exclude_task_id is not None:
+                query = query.filter(ChatMessage.task_id != exclude_task_id)
+
+            messages = query.all()
+
+            result = []
+            for msg in messages:
+                try:
+                    embedding = json.loads(msg.embedding) if msg.embedding else None
+                except:
+                    embedding = None
+
+                if embedding:
+                    result.append({
+                        'message_id': msg.message_id,
+                        'user_id': msg.user_id,
+                        'task_id': msg.task_id,
+                        'content': msg.content,
+                        'timestamp': msg.timestamp,
+                        'is_user': msg.is_user,
+                        'importance_score': msg.importance_score or 0.5,
+                        'embedding': embedding,
+                        # 动态遗忘曲线字段
+                        'consolidation_g': getattr(msg, 'consolidation_g', None) or 1.0,
+                        'recall_count': getattr(msg, 'recall_count', None) or 0,
+                        'last_recall_at': getattr(msg, 'last_recall_at', None),
+                        'emotional_salience': getattr(msg, 'emotional_salience', None) or 0.0
+                    })
+
+            return result
+
+        except Exception as e:
+            print(f"[VectorStore] 查询失败: {e}")
+            return []
+
+    def _update_memory_dynamic_fields(
+        self,
+        message_id: str,
+        consolidation_g: float = None,
+        recall_count: int = None,
+        last_recall_at: datetime = None
+    ) -> bool:
+        """
+        更新消息的动态遗忘曲线字段
+
+        Args:
+            message_id: 消息ID
+            consolidation_g: 新的固化系数
+            recall_count: 新的召回次数
+            last_recall_at: 新的上次召回时间
+
+        Returns:
+            是否成功
+        """
+        from database import ChatMessage
+
+        try:
+            msg = self.db.session.query(ChatMessage).filter(
+                ChatMessage.message_id == message_id
+            ).first()
+
+            if msg:
+                if consolidation_g is not None:
+                    msg.consolidation_g = consolidation_g
+                if recall_count is not None:
+                    msg.recall_count = recall_count
+                if last_recall_at is not None:
+                    msg.last_recall_at = last_recall_at
+
+                self.db.session.commit()
+                return True
+
+            return False
+
+        except Exception as e:
+            print(f"[VectorStore] 更新动态字段失败: {e}")
+            self.db.session.rollback()
+            return False
 
     def _get_user_messages_with_embedding(
         self,

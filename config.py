@@ -28,19 +28,34 @@ class Config:
                 'capacity': 7,  # 7轮对话
                 'turns': 7,
             },
-            # L3: 要义记忆 - Verbatim → Gist 转化
+            # L3: 要义记忆 - Verbatim → Gist 转化 + 情感显著性
             'gist_memory': {
-                'description': '要义记忆（语义编码）',
-                'theory': 'Fuzzy Trace Theory',
+                'description': '要义记忆（语义编码+情感显著性）',
+                'theory': 'Fuzzy Trace Theory + Emotional Salience',
                 'recent_turns': 3,  # 最近3轮保留原话
                 'gist_max_chars': 500,  # 要义摘要最大字数
+                # 情感显著性提取配置（参考CHI论文Table 2）
+                'emotional_extraction': {
+                    'enabled': True,
+                    'extract_emotional_needs': True,   # 深层情感需求
+                    'extract_core_values': True,       # 核心价值观
+                    'extract_significant_events': True # 高情感强度事件
+                }
             },
-            # L4: 混合记忆 - 短时+长时检索
+            # L4: 混合记忆 - 动态遗忘曲线（基于CHI'24 Hou et al.）
             'hybrid_memory': {
-                'description': '混合记忆（联想检索）',
-                'theory': 'Tulving陈述性记忆',
+                'description': '混合记忆（动态遗忘曲线）',
+                'theory': 'Ebbinghaus遗忘曲线 + Tulving陈述性记忆',
                 'recent_turns': 3,  # 最近3轮（当前焦点）
-                'retrieval_top_k': 3,  # 检索最相关的3条历史
+                'retrieval_top_k': 5,  # 候选池扩大（阈值筛选后取top-k）
+                # 动态遗忘曲线参数（CHI论文公式8-9）
+                'forgetting_curve': {
+                    'enabled': True,
+                    'initial_g': 1.0,           # 初始固化系数 g_0
+                    'recall_threshold': 0.86,   # 召回概率阈值（CHI论文建议值）
+                    'time_unit': 'days',        # 时间单位
+                    'update_on_recall': True    # 召回后更新固化系数
+                }
             },
         },
         # 通义千问 API 配置
@@ -68,10 +83,16 @@ class Config:
         'sensory_memory': {'alpha': 0, 'beta': 0, 'gamma': 0},   # 无读取
         'working_memory': {'alpha': 1, 'beta': 0, 'gamma': 0},   # 仅新鲜度
         'gist_memory': {'alpha': 0, 'beta': 0, 'gamma': 1},      # 仅重要性
-        'hybrid_memory': {'alpha': 0.3, 'beta': 0.5, 'gamma': 0.2},  # 混合加权
+        # L4: 动态遗忘曲线参数（对应CHI论文公式）
+        # alpha(时间敏感度)对应 e^{-t/g_n}, beta(语义相似度)对应 r, gamma(频率/固化强度)对应 g_n
+        'hybrid_memory': {
+            'alpha': 0.3,   # 时间衰减敏感度（融入遗忘曲线）
+            'beta': 0.5,    # 语义相似度权重（对应论文中的 r）
+            'gamma': 0.2,   # 频率/固化强度权重（对应论文中的 f/g_n）
+        },
     }
 
-    # 要义生成配置
+    # 要义生成配置（L3 增强版：情感显著性提取）
     GIST_CONFIG = {
         'summary_prompt_template': """请将以下对话历史压缩为{max_chars}字以内的要义摘要。
 
@@ -85,4 +106,45 @@ class Config:
 {conversation}
 
 请输出要义摘要：""",
+
+        # L3 用户画像提取增强提示词（融合CHI论文的情感显著性）
+        'profile_extraction_prompt': """你是一个用户画像分析助手。请根据以下对话，提取用户的长期特质。
+
+**已知画像**：
+{existing_profile}
+
+**本次对话**（第 {task_id} 次任务）：
+{conversation}
+
+**任务**：
+1. 提取本次对话中**新出现**的用户特质（不要重复已知画像）
+2. **重要**：每个特质后面必须标注来源任务，格式为 "[Task N]"
+3. 按以下分类整理：
+   - basic_info: 基本信息（年龄、职业、身份等）
+   - preferences: 偏好和喜好（饮食、爱好、品味等）
+   - constraints: 限制和约束（过敏、时间限制、禁忌等）
+   - goals: 目标和计划（近期目标、长期规划等）
+   - personality: 性格特征（内向/外向、完美主义等）
+   - social: 社交关系（家人、朋友、宠物等）
+
+4. **🔴 情感显著性提取**（重要！这有助于AI展现更深层的"理解感"）：
+   - emotional_needs: 用户表达的**深层情感需求**（如被理解、被认可、安全感、归属感等）
+   - core_values: 用户透露的**核心价值观**（如家庭优先、事业导向、健康意识、自由追求等）
+   - significant_events: **高情感强度事件**（如重大决定、人生转折、情绪波动时刻，标注情感类型：喜/怒/哀/惧/期待/失望等）
+
+**输出格式示例**（纯 JSON，不要解释）：
+{{
+  "basic_info": {{"occupation": "博士生 [Task 1]"}},
+  "preferences": ["喜欢爬山 [Task 1]", "素食主义者 [Task 1]"],
+  "constraints": ["对海鲜过敏 [Task 1]"],
+  "goals": ["准备考博 [Task 1]"],
+  "personality": ["内向 [Task 1]"],
+  "social": ["养了一只猫 [Task 1]"],
+  "emotional_needs": ["希望被理解和认可 [Task 1]", "需要独处空间 [Task 1]"],
+  "core_values": ["学术追求 [Task 1]", "健康生活 [Task 1]"],
+  "significant_events": ["对未来职业方向感到迷茫（焦虑） [Task 1]"]
+}}
+
+如果本次对话没有新特质，返回空 JSON {{}}.
+""",
     }

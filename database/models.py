@@ -121,6 +121,12 @@ class ChatMessage(Base):
     embedding = Column(Text, nullable=True)  # JSON 格式存储向量 [0.1, 0.2, ...]
     importance_score = Column(Float, default=0.5)  # 重要性分数 0-1
 
+    # L4 动态遗忘曲线字段（基于CHI'24 Hou et al.）
+    consolidation_g = Column(Float, default=1.0)      # 固化系数 g_n，越大衰减越慢
+    recall_count = Column(Integer, default=0)          # 被召回次数 n
+    last_recall_at = Column(DateTime, nullable=True)   # 上次被召回时间
+    emotional_salience = Column(Float, default=0.0)    # 情感显著性分数 0-1
+
     # 元数据
     response_style = Column(String(10), nullable=True)  # high, low
     token_count = Column(Integer, nullable=True)  # 可选：记录 token 数
@@ -182,14 +188,18 @@ class UserProfile(Base):
 
     # 画像内容（JSON 格式）
     profile_data = Column(JSON, default=dict)
-    # 格式示例:
+    # 格式示例（L3 增强版：含情感显著性）:
     # {
     #   "basic_info": {"age": 25, "occupation": "博士生"},
     #   "preferences": ["素食", "喜欢爬山", "养猫"],
     #   "constraints": ["对海鲜过敏", "工作日很忙"],
     #   "goals": ["准备考博", "学习Python"],
     #   "personality": ["内向", "完美主义"],
-    #   "social": ["养了一只猫", "和室友住"]
+    #   "social": ["养了一只猫", "和室友住"],
+    #   --- 情感显著性字段（CHI论文增强） ---
+    #   "emotional_needs": ["希望被理解和认可", "需要独处空间"],
+    #   "core_values": ["学术追求", "健康生活"],
+    #   "significant_events": ["对未来职业方向感到迷茫（焦虑）"]
     # }
 
     # 最后更新的任务ID（用于增量更新）

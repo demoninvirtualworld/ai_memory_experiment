@@ -296,10 +296,14 @@ class MemoryEngine:
         exclude_task_id: int = None
     ) -> List[MemoryItem]:
         """
-        使用 VectorStore 进行加权向量检索
+        使用 VectorStore 进行向量检索
 
-        公式: Score = α·Recency + β·Similarity + γ·Importance
-        权重从 config.py MEMORY_OPERATIONS['hybrid_memory'] 读取
+        优先使用动态遗忘曲线检索（CHI'24 Hou et al.）：
+        - 公式: p_n(t) = [1 - exp(-r·e^{-t/g_n})] / (1-e^{-1})
+        - 特点: 概率阈值触发，召回后更新固化系数
+
+        降级方案: 静态加权检索
+        - 公式: Score = α·Recency + β·Similarity + γ·Importance
 
         Args:
             user_id: 用户ID
@@ -315,14 +319,43 @@ class MemoryEngine:
         if not vector_store or not vector_store.db:
             return []
 
+        # 读取遗忘曲线配置
+        forgetting_curve_config = Config.EXPERIMENT_CONFIG.get('memory_config', {}).get(
+            'hybrid_memory', {}
+        ).get('forgetting_curve', {})
+
+        use_forgetting_curve = forgetting_curve_config.get('enabled', True)
+
         try:
-            # 调用加权检索
-            results = vector_store.search_weighted(
-                user_id=user_id,
-                query=query,
-                exclude_task_id=exclude_task_id,
-                top_k=self.RETRIEVAL_TOP_K
-            )
+            if use_forgetting_curve:
+                # 优先使用动态遗忘曲线检索
+                print(f"[MemoryEngine] 使用动态遗忘曲线检索")
+                results = vector_store.search_with_forgetting_curve(
+                    user_id=user_id,
+                    query=query,
+                    exclude_task_id=exclude_task_id,
+                    top_k=self.RETRIEVAL_TOP_K,
+                    update_on_recall=forgetting_curve_config.get('update_on_recall', True)
+                )
+
+                # 如果动态检索没有结果（可能是阈值太高），降级到静态检索
+                if not results:
+                    print(f"[MemoryEngine] 动态检索无结果，降级到静态检索")
+                    results = vector_store.search_weighted(
+                        user_id=user_id,
+                        query=query,
+                        exclude_task_id=exclude_task_id,
+                        top_k=self.RETRIEVAL_TOP_K
+                    )
+            else:
+                # 使用静态加权检索
+                results = vector_store.search_weighted(
+                    user_id=user_id,
+                    query=query,
+                    exclude_task_id=exclude_task_id,
+                    top_k=self.RETRIEVAL_TOP_K
+                )
+
             return results
 
         except Exception as e:

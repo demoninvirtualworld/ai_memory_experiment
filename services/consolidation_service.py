@@ -2,10 +2,11 @@
 记忆固化服务 (Consolidation Service)
 
 基于 He et al. (2024) 的理论：记忆固化应在 Session 结束后离线运行
+融合 CHI'24 Hou et al. 的情感显著性提取
 
 功能：
-- L3: 提取用户画像增量并更新
-- L4: 批量生成向量并存储
+- L3: 提取用户画像增量并更新（含情感显著性）
+- L4: 批量生成向量并存储（含情感显著性分数）
 """
 
 import json
@@ -14,6 +15,7 @@ from datetime import datetime
 
 from database import DBManager
 from database.vector_store import VectorStore, get_vector_store
+from config import Config
 
 
 class ConsolidationService:
@@ -187,14 +189,26 @@ class ConsolidationService:
         task_id: int
     ) -> Dict:
         """
-        使用 LLM 提取用户画像增量
+        使用 LLM 提取用户画像增量（L3 增强版：含情感显著性）
 
-        提示词设计：
+        提示词设计（融合CHI'24 Hou et al.的情感显著性）：
         - 只提取**新增**的特质（避免重复）
         - 分类存储（基本信息、偏好、限制、目标等）
+        - 🔴 新增：情感显著性提取（深层情感需求、核心价值观、高情感强度事件）
         """
-        # 构建提示词（增加溯源标注）
-        prompt = f"""你是一个用户画像分析助手。请根据以下对话，提取用户的长期特质。
+        # 尝试从 config.py 读取增强版提示词
+        enhanced_prompt_template = Config.GIST_CONFIG.get('profile_extraction_prompt', None)
+
+        if enhanced_prompt_template:
+            # 使用增强版提示词
+            prompt = enhanced_prompt_template.format(
+                existing_profile=json.dumps(existing_profile, ensure_ascii=False, indent=2),
+                task_id=task_id,
+                conversation=conversation
+            )
+        else:
+            # 降级：使用内置的增强版提示词
+            prompt = f"""你是一个用户画像分析助手。请根据以下对话，提取用户的长期特质。
 
 **已知画像**：
 {json.dumps(existing_profile, ensure_ascii=False, indent=2)}
@@ -213,6 +227,11 @@ class ConsolidationService:
    - personality: 性格特征（内向/外向、完美主义等）
    - social: 社交关系（家人、朋友、宠物等）
 
+4. **🔴 情感显著性提取**（重要！这有助于AI展现更深层的"理解感"）：
+   - emotional_needs: 用户表达的**深层情感需求**（如被理解、被认可、安全感、归属感等）
+   - core_values: 用户透露的**核心价值观**（如家庭优先、事业导向、健康意识、自由追求等）
+   - significant_events: **高情感强度事件**（如重大决定、人生转折、情绪波动时刻，标注情感类型：喜/怒/哀/惧/期待/失望等）
+
 **输出格式示例**（纯 JSON，不要解释）：
 {{
   "basic_info": {{"occupation": "博士生 [Task 1]"}},
@@ -220,7 +239,10 @@ class ConsolidationService:
   "constraints": ["对海鲜过敏 [Task 1]"],
   "goals": ["准备考博 [Task 1]"],
   "personality": ["内向 [Task 1]"],
-  "social": ["养了一只猫 [Task 1]"]
+  "social": ["养了一只猫 [Task 1]"],
+  "emotional_needs": ["希望被理解和认可 [Task 1]", "需要独处空间 [Task 1]"],
+  "core_values": ["学术追求 [Task 1]", "健康生活 [Task 1]"],
+  "significant_events": ["对未来职业方向感到迷茫（焦虑） [Task 1]"]
 }}
 
 如果本次对话没有新特质，返回空 JSON {{}}.
@@ -390,7 +412,7 @@ class ConsolidationService:
         texts = [msg.content for msg in unvectorized]
         embeddings = self.vector_store.generate_embeddings_batch(texts)
 
-        # 3. 更新数据库
+        # 3. 更新数据库（含情感显著性）
         success_count = 0
         fail_count = 0
 
@@ -399,11 +421,15 @@ class ConsolidationService:
                 # 计算重要性分数（简单规则）
                 importance = self._calculate_importance(msg.content, msg.is_user)
 
+                # 计算情感显著性（CHI'24 增强）
+                emotional_salience = self._calculate_emotional_salience(msg.content, msg.is_user)
+
                 # 更新数据库
-                if self.vector_store.update_message_embedding(
+                if self._update_message_with_embedding_and_salience(
                     msg.message_id,
                     embedding,
-                    importance
+                    importance,
+                    emotional_salience
                 ):
                     success_count += 1
                 else:
@@ -418,6 +444,48 @@ class ConsolidationService:
             'success': success_count,
             'failed': fail_count
         }
+
+    def _update_message_with_embedding_and_salience(
+        self,
+        message_id: str,
+        embedding: list,
+        importance_score: float,
+        emotional_salience: float
+    ) -> bool:
+        """
+        更新消息的向量、重要性和情感显著性
+
+        Args:
+            message_id: 消息ID
+            embedding: 向量
+            importance_score: 重要性分数
+            emotional_salience: 情感显著性分数
+
+        Returns:
+            是否成功
+        """
+        from database import ChatMessage
+
+        try:
+            msg = self.db.session.query(ChatMessage).filter(
+                ChatMessage.message_id == message_id
+            ).first()
+
+            if msg:
+                msg.embedding = json.dumps(embedding)
+                msg.importance_score = importance_score
+                # 更新情感显著性字段
+                if hasattr(msg, 'emotional_salience'):
+                    msg.emotional_salience = emotional_salience
+                self.db.session.commit()
+                return True
+
+            return False
+
+        except Exception as e:
+            print(f"[Consolidation] 更新消息失败: {e}")
+            self.db.session.rollback()
+            return False
 
     def _calculate_importance(self, content: str, is_user: bool) -> float:
         """
@@ -448,6 +516,73 @@ class ConsolidationService:
 
         # 限制在 0-1 范围
         return min(1.0, importance)
+
+    def _calculate_emotional_salience(self, content: str, is_user: bool) -> float:
+        """
+        计算消息的情感显著性分数（CHI'24 增强）
+
+        情感显著性反映消息的情感强度和深度，用于：
+        1. L3 画像提取时识别高情感强度事件
+        2. L4 向量检索时提升情感相关记忆的权重
+
+        规则：
+        - 高情感强度词汇：+0.3
+        - 自我披露词汇：+0.2
+        - 价值观相关词汇：+0.1
+        """
+        salience = 0.0
+
+        if not is_user:
+            return 0.0  # AI消息的情感显著性为0
+
+        # 高情感强度词汇
+        high_emotion_keywords = [
+            # 喜
+            '太开心了', '太高兴了', '兴奋', '激动', '感动', '幸福', '满足',
+            # 怒
+            '生气', '愤怒', '气死', '烦死', '讨厌', '受不了',
+            # 哀
+            '难过', '伤心', '失落', '沮丧', '绝望', '心痛', '想哭', '崩溃',
+            # 惧
+            '害怕', '恐惧', '担心', '焦虑', '紧张', '不安', '压力',
+            # 期待
+            '期待', '盼望', '希望', '想要', '梦想',
+            # 失望
+            '失望', '遗憾', '可惜', '后悔'
+        ]
+
+        # 自我披露词汇
+        self_disclosure_keywords = [
+            '其实我', '说实话', '老实说', '跟你说', '告诉你',
+            '从来没', '第一次', '一直以来', '内心', '真正的我'
+        ]
+
+        # 价值观相关词汇
+        value_keywords = [
+            '最重要', '最在乎', '一定要', '绝对不', '原则', '底线',
+            '意义', '价值', '人生', '理想', '信念'
+        ]
+
+        # 计算分数
+        if any(kw in content for kw in high_emotion_keywords):
+            salience += 0.3
+
+        if any(kw in content for kw in self_disclosure_keywords):
+            salience += 0.2
+
+        if any(kw in content for kw in value_keywords):
+            salience += 0.1
+
+        # 感叹号和问号也可能表示情感强度
+        exclamation_count = content.count('！') + content.count('!')
+        question_count = content.count('？') + content.count('?')
+        if exclamation_count >= 2:
+            salience += 0.1
+        if question_count >= 2:
+            salience += 0.05
+
+        # 限制在 0-1 范围
+        return min(1.0, salience)
 
     # ============ 工具方法 ============
 
