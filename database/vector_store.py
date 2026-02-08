@@ -41,6 +41,8 @@ class MemoryItem:
     recall_count: int = 0              # 召回次数 n
     recall_probability: float = 0.0    # 召回概率 p(t)
     days_since_last_recall: float = 0.0  # 距上次召回天数
+    # 情感显著性字段（CHI'24 增强）
+    emotional_salience: float = 0.0    # 情感显著性分数
 
     def to_dict(self) -> Dict:
         return {
@@ -59,6 +61,8 @@ class MemoryItem:
             'recall_count': self.recall_count,
             'recall_probability': round(self.recall_probability, 3),
             'days_since_last_recall': round(self.days_since_last_recall, 2),
+            # 情感显著性字段
+            'emotional_salience': round(self.emotional_salience, 3),
         }
 
 
@@ -519,7 +523,7 @@ class VectorStore:
         recalled_memories = []
         recall_model = self.recall_model
 
-        # 3. 计算每条消息的召回概率
+        # 3. 计算每条消息的召回概率（融合情感显著性）
         for msg in messages:
             # 语义相似度 r
             similarity = cosine_similarity(query_embedding, msg['embedding'])
@@ -531,12 +535,21 @@ class VectorStore:
             # 固化系数 g_n
             consolidation_g = msg.get('consolidation_g', 1.0)
 
-            # 计算召回概率
-            recall_prob = recall_model.calculate_recall_probability(
+            # 🔴 情感显著性 (CHI'24 增强)
+            emotional_salience = msg.get('emotional_salience', 0.0)
+
+            # 计算基础召回概率
+            base_recall_prob = recall_model.calculate_recall_probability(
                 relevance=similarity,
                 elapsed_time=elapsed_days,
                 consolidation_g=consolidation_g
             )
+
+            # 🔴 情感显著性加成：高情感显著性的记忆更容易被召回
+            # 公式: final_prob = base_prob + emotional_bonus
+            # emotional_bonus = emotional_salience * 0.1 (最多提升0.1)
+            emotional_bonus = emotional_salience * 0.1
+            recall_prob = min(1.0, base_recall_prob + emotional_bonus)
 
             # 创建 MemoryItem
             memory = MemoryItem(
@@ -552,7 +565,8 @@ class VectorStore:
                 recall_count=msg.get('recall_count', 0),
                 recall_probability=recall_prob,
                 days_since_last_recall=elapsed_days,
-                final_score=recall_prob  # 使用召回概率作为最终分数
+                final_score=recall_prob,  # 使用召回概率作为最终分数
+                emotional_salience=emotional_salience  # 🔴 情感显著性
             )
 
             # 4. 阈值筛选：只有超过阈值的才被召回

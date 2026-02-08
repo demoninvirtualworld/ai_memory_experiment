@@ -182,7 +182,11 @@ class MemoryEngine:
 
     def _get_consolidated_gist(self, user_id: str) -> str:
         """
-        读取固化的用户画像（L3 专用）
+        读取固化的用户画像（L3/L4 通用）
+
+        包含：
+        - 基础字段：basic_info, preferences, constraints, goals, personality, social
+        - 情感显著性字段：emotional_needs, core_values, significant_events
 
         Returns:
             格式化的画像文本，如果不存在则返回空字符串
@@ -196,6 +200,7 @@ class MemoryEngine:
             # 格式化画像为自然语言
             lines = []
 
+            # === 基础字段 ===
             if profile.get('basic_info'):
                 info = profile['basic_info']
                 if info:
@@ -226,6 +231,22 @@ class MemoryEngine:
                 if social:
                     lines.append("社交：" + "、".join(social))
 
+            # === 情感显著性字段（CHI'24 增强） ===
+            if profile.get('emotional_needs'):
+                emotional_needs = profile['emotional_needs']
+                if emotional_needs:
+                    lines.append("深层情感需求：" + "、".join(emotional_needs))
+
+            if profile.get('core_values'):
+                core_values = profile['core_values']
+                if core_values:
+                    lines.append("核心价值观：" + "、".join(core_values))
+
+            if profile.get('significant_events'):
+                significant_events = profile['significant_events']
+                if significant_events:
+                    lines.append("重要事件：" + "、".join(significant_events))
+
             return "\n".join(lines) if lines else ""
 
         except Exception as e:
@@ -238,14 +259,15 @@ class MemoryEngine:
         """
         L4: 混合记忆 (Hybrid Long-term Memory)
 
-        心理学基础: Tulving 陈述性记忆 + 扩散激活
+        心理学基础: Tulving 陈述性记忆 + 扩散激活 + Ebbinghaus 遗忘曲线
         - 无限容量但受提取线索影响
         - 编码特异性原则
+        - 动态遗忘曲线（CHI'24 Hou et al.）
 
-        实现:
-        - 短时成分: 最近 3 轮 (当前焦点)
-        - 长时成分: 向量加权检索 Top-K
-          公式: Score = α·Recency + β·Similarity + γ·Importance
+        实现（三部分）:
+        1. 用户画像: 读取 L3 固化的用户特征（含情感显著性）
+        2. 短时成分: 最近 3 轮 (当前焦点)
+        3. 长时成分: 动态遗忘曲线检索 + 情感显著性加权
         """
         messages = self.db.get_messages_before_task(user_id, current_task_id)
 
@@ -256,7 +278,13 @@ class MemoryEngine:
 
         context_parts = []
 
-        # 1. 短时成分: 最近 N 轮 (当前焦点)
+        # 🔴 1. 用户画像: 读取 L3 固化的画像（含情感显著性字段）
+        # L4 比 L3 更强，应该也能获取用户画像信息
+        user_profile = self._get_consolidated_gist(user_id)
+        if user_profile:
+            context_parts.append(f"[用户画像]\n{user_profile}")
+
+        # 2. 短时成分: 最近 N 轮 (当前焦点)
         if turns:
             recent_turns = turns[-self.RECENT_VERBATIM_TURNS:]
             if recent_turns:
@@ -264,7 +292,7 @@ class MemoryEngine:
                 if recent_text:
                     context_parts.append(f"[当前对话]\n{recent_text}")
 
-        # 2. 长时成分: 向量加权检索相关历史
+        # 3. 长时成分: 动态遗忘曲线检索（融合情感显著性）
         query = self._current_query
         if query:
             # 尝试使用向量存储进行检索
