@@ -421,8 +421,20 @@ class ConsolidationService:
                 # 计算重要性分数（简单规则）
                 importance = self._calculate_importance(msg.content, msg.is_user)
 
-                # 计算情感显著性（CHI'24 增强）
-                emotional_salience = self._calculate_emotional_salience(msg.content, msg.is_user)
+                # 🔴 计算情感显著性（使用混合方法）
+                # 根据config配置选择方法：'rule', 'llm', 'hybrid'
+                config = Config.EXPERIMENT_CONFIG.get('emotional_salience', {})
+                method = config.get('method', 'hybrid')
+
+                if method == 'llm':
+                    # 纯LLM方法
+                    emotional_salience = self._calculate_emotional_salience_llm(msg.content, msg.is_user)
+                elif method == 'hybrid':
+                    # 混合方法（推荐）
+                    emotional_salience = self._calculate_emotional_salience_hybrid(msg.content, msg.is_user)
+                else:
+                    # 默认规则方法
+                    emotional_salience = self._calculate_emotional_salience(msg.content, msg.is_user)
 
                 # 更新数据库
                 if self._update_message_with_embedding_and_salience(
@@ -477,6 +489,14 @@ class ConsolidationService:
                 # 更新情感显著性字段
                 if hasattr(msg, 'emotional_salience'):
                     msg.emotional_salience = emotional_salience
+
+                # 🔴 双层机制 - 固化层：情感影响初始固化系数
+                # 公式：g_0 = 1.0 + α * emotional_salience
+                # α = 0.5，高情感记忆（如0.8）获得 g_0 = 1.4
+                if hasattr(msg, 'consolidation_g'):
+                    initial_g = 1.0 + 0.5 * emotional_salience
+                    msg.consolidation_g = initial_g
+
                 self.db.session.commit()
                 return True
 
@@ -519,7 +539,7 @@ class ConsolidationService:
 
     def _calculate_emotional_salience(self, content: str, is_user: bool) -> float:
         """
-        计算消息的情感显著性分数（CHI'24 增强）
+        计算消息的情感显著性分数（基于规则的快速方法）
 
         情感显著性反映消息的情感强度和深度，用于：
         1. L3 画像提取时识别高情感强度事件
@@ -529,6 +549,9 @@ class ConsolidationService:
         - 高情感强度词汇：+0.3
         - 自我披露词汇：+0.2
         - 价值观相关词汇：+0.1
+
+        Returns:
+            情感显著性分数 0-1
         """
         salience = 0.0
 
@@ -583,6 +606,169 @@ class ConsolidationService:
 
         # 限制在 0-1 范围
         return min(1.0, salience)
+
+    def _calculate_emotional_salience_llm(self, content: str, is_user: bool) -> float:
+        """
+        使用LLM评估情感显著性（精确版）
+
+        评估维度：
+        1. 情感强度 (Emotional Intensity): 0-1
+        2. 自我披露深度 (Self-Disclosure Depth): 0-1
+        3. 价值观相关性 (Value Relevance): 0-1
+
+        Args:
+            content: 消息内容
+            is_user: 是否为用户消息
+
+        Returns:
+            情感显著性分数 0-1
+        """
+        if not is_user:
+            return 0.0  # AI消息不计算
+
+        if not self.llm or not hasattr(self.llm, 'generate_response'):
+            # LLM不可用，降级为规则方法
+            print(f"[情感打分] LLM不可用，降级为规则方法")
+            return self._calculate_emotional_salience(content, is_user)
+
+        # 读取配置权重
+        weights = Config.EXPERIMENT_CONFIG.get('emotional_salience', {}).get('weights', {
+            'emotional_intensity': 0.4,
+            'self_disclosure_depth': 0.4,
+            'value_relevance': 0.2
+        })
+
+        # 构建提示词
+        prompt = f"""请评估以下用户消息的情感显著性。
+
+**用户消息**: "{content}"
+
+**评估维度**（每个维度0-1分）：
+1. **情感强度** (Emotional Intensity): 消息中表达的情感有多强烈？
+   - 0.0分: 无情感（如"今天天气不错"）
+   - 0.3分: 轻微情感（如"有点开心"）
+   - 0.7分: 中等情感（如"很高兴"）
+   - 1.0分: 极强情感（如"太激动了！简直不敢相信！"、"我崩溃了"）
+
+2. **自我披露深度** (Self-Disclosure Depth): 用户是否分享了私密/深层信息？
+   - 0.0分: 客观事实（如"我住在北京"）
+   - 0.3分: 浅层偏好（如"我喜欢咖啡"）
+   - 0.7分: 深层想法（如"其实我一直很焦虑"）
+   - 1.0分: 核心隐私（如"我从没告诉过别人..."）
+
+3. **价值观相关性** (Value Relevance): 是否涉及用户的核心价值观或人生原则？
+   - 0.0分: 无关（如"今天吃了面条"）
+   - 0.3分: 轻微相关（如"我比较注重健康"）
+   - 0.7分: 中度相关（如"家人对我很重要"）
+   - 1.0分: 核心价值观（如"我人生最重要的原则是..."）
+
+**输出格式**（仅输出JSON，不要任何解释）：
+{{
+  "emotional_intensity": 0.0,
+  "self_disclosure_depth": 0.0,
+  "value_relevance": 0.0
+}}
+
+如果消息为空或无法评估，返回 {{"emotional_intensity": 0.0, "self_disclosure_depth": 0.0, "value_relevance": 0.0}}
+"""
+
+        try:
+            # 调用LLM
+            response = self.llm.generate_response(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,  # 低温度保证稳定性
+                max_tokens=150
+            )
+
+            # 清理响应（移除可能的markdown代码块）
+            cleaned = response.strip()
+            if cleaned.startswith('```json'):
+                cleaned = cleaned[7:]
+            if cleaned.startswith('```'):
+                cleaned = cleaned[3:]
+            if cleaned.endswith('```'):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+
+            # 解析JSON
+            scores = json.loads(cleaned)
+
+            # 验证分数范围
+            for key in ['emotional_intensity', 'self_disclosure_depth', 'value_relevance']:
+                if key in scores:
+                    scores[key] = max(0.0, min(1.0, scores[key]))
+
+            # 计算加权平均
+            emotional_salience = (
+                scores.get('emotional_intensity', 0.0) * weights.get('emotional_intensity', 0.4) +
+                scores.get('self_disclosure_depth', 0.0) * weights.get('self_disclosure_depth', 0.4) +
+                scores.get('value_relevance', 0.0) * weights.get('value_relevance', 0.2)
+            )
+
+            # 限制在 [0, 1]
+            emotional_salience = max(0.0, min(1.0, emotional_salience))
+
+            print(f"[LLM情感打分] 消息: {content[:30]}... → {emotional_salience:.3f}")
+            print(f"  详细: intensity={scores.get('emotional_intensity', 0):.2f}, "
+                  f"disclosure={scores.get('self_disclosure_depth', 0):.2f}, "
+                  f"value={scores.get('value_relevance', 0):.2f}")
+
+            return emotional_salience
+
+        except json.JSONDecodeError as e:
+            print(f"[情感打分] JSON解析失败: {e}")
+            print(f"  原始输出: {response[:200] if 'response' in locals() else 'N/A'}")
+            # 降级为规则方法
+            return self._calculate_emotional_salience(content, is_user)
+
+        except Exception as e:
+            print(f"[情感打分] LLM调用失败: {type(e).__name__}: {e}")
+            # 降级为规则方法
+            return self._calculate_emotional_salience(content, is_user)
+
+    def _calculate_emotional_salience_hybrid(
+        self,
+        content: str,
+        is_user: bool
+    ) -> float:
+        """
+        混合方法：规则快速筛选 + LLM精确打分
+
+        流程：
+        1. 第一层：规则方法快速评估
+        2. 如果分数低于阈值 → 直接返回（节省API）
+        3. 如果分数高于阈值 → 调用LLM精确打分
+
+        Args:
+            content: 消息内容
+            is_user: 是否为用户消息
+
+        Returns:
+            情感显著性分数 0-1
+        """
+        if not is_user:
+            return 0.0
+
+        # 读取配置
+        config = Config.EXPERIMENT_CONFIG.get('emotional_salience', {})
+        method = config.get('method', 'hybrid')
+        llm_threshold = config.get('llm_threshold', 0.2)
+        enable_llm = config.get('enable_llm', True)
+
+        # 🔴 第一层：规则快速筛选
+        rule_score = self._calculate_emotional_salience(content, is_user)
+
+        # 如果禁用LLM或分数很低，直接返回
+        if not enable_llm or rule_score < llm_threshold:
+            print(f"[混合打分] 规则分数{rule_score:.2f} < 阈值{llm_threshold}，跳过LLM")
+            return rule_score
+
+        # 🔴 第二层：LLM精确打分
+        print(f"[混合打分] 规则分数{rule_score:.2f} >= 阈值{llm_threshold}，调用LLM精确评估")
+        llm_score = self._calculate_emotional_salience_llm(content, is_user)
+
+        # 返回LLM分数（更准确）
+        return llm_score
 
     # ============ 工具方法 ============
 

@@ -67,7 +67,23 @@ class Config:
         'deepseek_api_key': os.environ.get('DEEPSEEK_API_KEY', 'sk-98536e82c24d4ce59234f32c988eb597'),
         'deepseek_base_url': 'https://api.deepseek.com/v1',
         # 当前使用的模型提供商: 'qwen' 或 'deepseek'
-        'model_provider': 'qwen'
+        'model_provider': 'qwen',
+        # 🔴 情感显著性配置（方案A+C混合）
+        'emotional_salience': {
+            # 方法选择: 'rule' (仅规则), 'llm' (纯LLM), 'hybrid' (混合，推荐)
+            # 🔴 根据测试结果，直接使用LLM方法（准确率最高）
+            'method': 'llm',
+            # LLM调用阈值: 规则分数超过此值才调用LLM（仅hybrid模式有效）
+            'llm_threshold': 0.2,
+            # 是否启用LLM打分（可用于临时关闭，节省成本）
+            'enable_llm': True,
+            # LLM评分维度权重
+            'weights': {
+                'emotional_intensity': 0.4,      # 情感强度权重
+                'self_disclosure_depth': 0.4,    # 自我披露深度权重
+                'value_relevance': 0.2           # 价值观相关性权重
+            }
+        }
     }
 
     # 对话配置

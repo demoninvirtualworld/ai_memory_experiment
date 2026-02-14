@@ -141,20 +141,28 @@ class DynamicMemoryRecall:
     def update_consolidation(
         self,
         current_g: float,
-        recall_interval: float
+        recall_interval: float,
+        emotional_salience: float = 0.0
     ) -> float:
         """
-        更新固化系数（CHI论文公式9）
+        更新固化系数（CHI论文公式9 + 情感加速）
 
-        g_n = g_{n-1} + S(t)
-        S(t) = (1 - e^{-t}) / (1 + e^{-t})  (修正sigmoid)
+        原始公式：g_n = g_{n-1} + S(t)
+        增强公式：g_n = g_{n-1} + S(t) × (1 + α × emotional_salience)
+
+        其中：
+        - S(t) = (1 - e^{-t}) / (1 + e^{-t})  (修正sigmoid)
+        - α = 0.5 (情感加速系数)
 
         召回间隔越长，S(t)越大，固化强度增加越多
         这模拟了"间隔效应"：间隔较长的重复比间隔较短的重复更有效
 
+        情感显著性高的记忆固化速度更快（神经科学证据：杏仁核-海马体耦合）
+
         Args:
             current_g: 当前固化系数 g_{n-1}
             recall_interval: 距上次召回的时间间隔
+            emotional_salience: 情感显著性分数 (0-1)
 
         Returns:
             更新后的固化系数 g_n
@@ -166,7 +174,12 @@ class DynamicMemoryRecall:
         # 当 t → ∞: S(t) → 1
         s_t = (1 - math.exp(-t)) / (1 + math.exp(-t))
 
-        return current_g + s_t
+        # 🔴 双层机制 - 再固化层：情感加速固化
+        # α = 0.5，高情感记忆固化速度提升最多50%
+        alpha_emotional = 0.5 * emotional_salience
+        delta_g = s_t * (1 + alpha_emotional)
+
+        return current_g + delta_g
 
     def should_recall(self, probability: float) -> bool:
         """
@@ -545,10 +558,11 @@ class VectorStore:
                 consolidation_g=consolidation_g
             )
 
-            # 🔴 情感显著性加成：高情感显著性的记忆更容易被召回
+            # 🔴 双层机制 - 召回层：情感显著性短期加成
             # 公式: final_prob = base_prob + emotional_bonus
-            # emotional_bonus = emotional_salience * 0.1 (最多提升0.1)
-            emotional_bonus = emotional_salience * 0.1
+            # emotional_bonus = emotional_salience * 0.05 (最多提升0.05)
+            # 注：权重从0.1降低到0.05，因为固化层也有情感效果
+            emotional_bonus = emotional_salience * 0.05
             recall_prob = min(1.0, base_recall_prob + emotional_bonus)
 
             # 创建 MemoryItem
@@ -575,7 +589,12 @@ class VectorStore:
 
                 # 5. 更新固化系数（被召回后变得更难遗忘）
                 if update_on_recall and self.FORGETTING_CURVE_CONFIG.get('update_on_recall', True):
-                    new_g = recall_model.update_consolidation(consolidation_g, elapsed_days)
+                    # 🔴 传入情感显著性，实现情感加速固化
+                    new_g = recall_model.update_consolidation(
+                        consolidation_g,
+                        elapsed_days,
+                        emotional_salience=emotional_salience  # 情感加速
+                    )
                     new_recall_count = msg.get('recall_count', 0) + 1
 
                     self._update_memory_dynamic_fields(
