@@ -244,187 +244,169 @@ AI助手：爬山感觉怎么样？
 ### L4: 混合记忆 (Hybrid Memory)
 
 #### 理论基础
-- **来源**:
-  - Tulving (1972) 陈述性记忆 + 扩散激活
-  - Ebbinghaus 遗忘曲线
-  - CHI'24 Hou et al. 动态记忆召回与固化
-- **原理**:
-  - 记忆强度随时间指数衰减
-  - 被召回的记忆会被强化（间隔效应）
-  - 情感显著性高的记忆更容易被召回
+
+- **来源**: Tulving (1972) 陈述性记忆 · Ebbinghaus 遗忘曲线 · CHI'24 Hou et al. 动态记忆召回
+- **核心原理**:
+  - 每条历史消息都有一个**召回概率**，随时间自然衰减
+  - 被召回的记忆获得**固化强化**，下次更难遗忘（间隔效应）
+  - 情感显著性高的记忆，初始固化强度更高、召回时相关度更强
 
 #### 实现方式
+
 ```
-当前查询 → [用户画像] + [短时焦点] + [动态遗忘曲线检索] → 相关记忆被唤醒
+当前查询 → [用户画像(L3)] + [最近3轮] + [动态遗忘曲线检索] → AI回复
 ```
-
-| 配置项 | 值 | 说明 |
-|--------|-----|------|
-| `recent_turns` | 3 | 最近 3 轮（当前焦点） |
-| `retrieval_top_k` | 5 | 检索候选池大小 |
-| `recall_threshold` | 0.86 | 召回概率阈值 |
-| `initial_g` | 1.0 | 初始固化系数 |
-| `update_on_recall` | true | 召回后更新固化系数 |
-
-#### 核心公式（CHI'24 Hou et al. + 情感双层机制）
-
-**召回概率** (公式 8):
-$$p_n(t) = \frac{1 - \exp(-r \cdot e^{-t/g_n})}{1 - e^{-1}}$$
-
-**固化系数更新** (公式 9，增强版):
-$$g_n = g_{n-1} + S(t) \times (1 + \alpha \cdot e_{salience}), \quad S(t) = \frac{1 - e^{-t}}{1 + e^{-t}}$$
-
-**情感显著性双层机制**:
-
-1. **固化层（长期效果）**：
-   $$g_0 = 1.0 + 0.5 \times e_{salience}$$
-
-2. **召回层（短期加成）**：
-   $$p_{final} = \min(1.0, p_n(t) + 0.05 \times e_{salience})$$
-
-3. **再固化层（情感加速）**：
-   $$\Delta g = S(t) \times (1 + 0.5 \times e_{salience})$$
-
-其中：
-- $r$ = 语义相似度 (cosine similarity)
-- $t$ = 距上次召回的时间（天）
-- $g_n$ = 固化系数（召回次数越多越大，衰减越慢）
-- $e_{salience}$ = 情感显著性分数 (0-1，由LLM三维评估得出)
-- $\alpha$ = 0.5（情感加速系数）
 
 ---
 
-#### 情感显著性双层机制（创新点）
+#### 理解固化系数 g_n（最重要的概念）
 
-受情感神经科学启发（LaBar & Cabeza, 2006; Bower, 1981），我们设计了**情感影响记忆的双层机制**，避免简单的维度堆叠，实现理论统一。
+**g_n 是什么？**
 
-##### 🧠 神经科学基础
+可以把 g_n 理解为一条记忆的**抗遗忘强度**：
 
-- **编码/固化阶段**：杏仁核-海马体回路被激活，情感事件获得更强的巩固
-- **提取/召回阶段**：情感一致性效应，当前情绪状态优先召回同情绪记忆
-- **再固化阶段**：每次提取后，记忆进入"不稳定状态"，情感加速再巩固
-
-##### 📐 三层作用机制
-
-**Layer 1 - 固化层（初始化）**
-
-记忆首次固化时，情感影响初始固化系数：
-
-```python
-# 公式
-g_0 = 1.0 + 0.5 × emotional_salience
-
-# 示例
-低情感消息（"今天去图书馆"）：g_0 = 1.0
-高情感消息（"我对未来很迷茫"）：g_0 = 1.35 ← 提升35%
+```
+g_n 越大 → 记忆衰减越慢 → 间隔很久后依然可能被召回
+g_n 越小 → 记忆衰减越快 → 几天后就会低于召回阈值
 ```
 
-**Layer 2 - 召回层（短期加成）**
+**g_n 如何随时间演化？**
 
-检索时，情感提供即时的召回概率加成：
+每条消息在首次固化时获得一个初始值 g_0，之后每次被成功召回，g_n 就会增大一次：
 
-```python
-# 公式
-p_final = min(1.0, p_n(t) + 0.05 × emotional_salience)
-
-# 权重从0.1降低到0.05，因为固化层已有效果，避免过度加成
+```
+g_0（首次固化）
+  ↓ 第1次被召回后
+g_1 = g_0 + S(t₁)
+  ↓ 第2次被召回后
+g_2 = g_1 + S(t₂)
+  ↓ ... 滚雪球式增长
 ```
 
-**Layer 3 - 再固化层（长期强化）**
+其中 S(t) = tanh(t/2)，间隔越长、固化增量越大（间隔效应）。
 
-被召回后更新固化系数时，情感加速固化过程：
+**具体数值示例**（本实验参数，平均间隔 2.5 天）：
 
-```python
-# 公式
-Δg = S(t) × (1 + 0.5 × emotional_salience)
+| 时间节点 | 普通记忆 g_n | 高情感记忆 g_n（e=1.0） |
+|---------|------------|----------------------|
+| 第1次会话后（g_0） | **3.0** | **4.5** |
+| 第2周（第4次会话） | ≈ 6.4 | ≈ 9.6 |
+| 第3周（第8次会话） | ≈ 9.8 | ≈ 14.7 |
+| 第4周（第12次会话）| ≈ 13.1 | ≈ 19.7 |
 
-# 示例
-普通记忆：Δg = 0.2
-高情感记忆（0.8）：Δg = 0.2 × 1.4 = 0.28 ← 固化速度提升40%
-```
+这就是论文要展示的**"滚雪球"效应**：核心情感记忆在4周后的 g_n 约是初始值的4倍，意味着即使间隔10天也不会被遗忘。
 
-##### ✨ 优势
+---
 
-| 对比维度 | 单层加成（旧方案） | 双层机制（新方案） |
-|---------|------------------|------------------|
-| 理论统一性 | ❌ 简单加法叠加 | ✅ 情感通过 $g_n$ 统一作用 |
-| 神经科学 | ❌ 仅在召回层 | ✅ 编码+提取+再固化三阶段 |
-| 冷启动问题 | ❌ 新记忆 $g_0$ 固定 | ✅ 高情感记忆初始就更强 |
-| 长期优势 | ❌ 仅短期加成 | ✅ 随时间 $g_n$ 差距拉大 |
-| 扩展性 | ❌ 难以融入新维度 | ✅ 统一框架易扩展 |
+#### 理解召回概率与阈值
 
-##### 📊 实测效果
+**召回概率公式**（CHI'24 Hou et al. 公式8）：
 
-- **初始固化**：高情感记忆 $g_0$ 提升 **30-40%**
-- **召回加成**：情感分数 0.7 → 召回概率 **+0.035**
-- **长期强化**：每次召回后，高情感记忆固化速度提升 **最多50%**
+$$p_n(t) = \frac{1 - \exp(-r_{eff} \cdot e^{-t/g_n})}{1 - e^{-1}}$$
 
-##### 🎓 学术话术（论文撰写参考）
+三个输入参数的直觉含义：
 
-> We extend the dynamic forgetting curve (Hou et al., 2024) by introducing a **dual-pathway emotional enhancement mechanism**:
->
-> 1. **Consolidation pathway** (long-term): Emotional memories receive accelerated consolidation via enhanced $g_n$ initialization and update.
-> 2. **Retrieval pathway** (short-term): Emotional cues provide immediate recall boost through probability bonus.
->
-> This design mirrors neurobiological findings where amygdala-hippocampal coupling enhances both **encoding** (LaBar & Cabeza, 2006) and **retrieval** (Bower, 1981), avoiding arbitrary dimension stacking in favor of a unified theoretical framework.
+| 参数 | 含义 | 范围 | 效果 |
+|------|------|------|------|
+| $r_{eff}$ | 这条记忆与当前查询的语义相关度（含情感调制） | 0~1 | 越高越容易被想起 |
+| $t$ | 距上次被召回的天数 | ≥0 | 越大越容易被遗忘 |
+| $g_n$ | 固化强度 | ≥3.0 | 越大衰减越慢 |
+
+**阈值 k=0.60 的意义**：只有 p_n(t) ≥ 0.60 的记忆才会被检索出来提供给 AI。
+
+**实验节奏下的关键数值**（适配每周3次、间隔2~3天）：
+
+| 场景 | r_eff | t | g_n | p_n(t) | 是否召回？ |
+|------|-------|---|-----|--------|---------|
+| 高相关，2天后，普通记忆 | 1.0 | 2d | 3.0 | **0.633** | ✅ 召回 |
+| 高相关，3天后，普通记忆 | 1.0 | 3d | 3.0 | 0.487 | ❌ 遗忘 |
+| 高相关，3天后，高情感记忆 | 1.0 | 3d | 4.5 | **0.633** | ✅ 召回 |
+| 中等相关，2天后 | 0.7 | 2d | 3.0 | 0.478 | ❌ 遗忘 |
+| 第4周高情感核心记忆（多次召回后） | 0.8 | 3d | 19.7 | **0.762** | ✅ 召回 |
+
+**直觉解读**：高情感记忆因为 g_0=4.5 更大，在第一次"周末3天间隔"就能跨越阈值被召回；而普通记忆需要至少被主动提及2~3次（g_n 增长后）才能具备同等的抗遗忘能力。
+
+---
+
+#### 核心公式完整体系
+
+**1. 情感调制相关度**（召回层，本实验扩展）：
+
+$$r_{eff} = \min\!\left(1.0,\; r \times (1 + 0.3 \cdot e_{salience})\right)$$
+
+将情感因子融入语义相关度内部，保持遗忘曲线的数学封闭性。
+
+**2. 召回概率**（CHI'24 公式8）：
+
+$$p_n(t) = \frac{1 - \exp(-r_{eff} \cdot e^{-t/g_n})}{1 - e^{-1}}$$
+
+**3. 初始固化系数**（固化层，本实验扩展）：
+
+$$g_0 = 3.0 + 1.5 \times e_{salience}$$
+
+无情感(e=0)：g₀=3.0，覆盖2天间隔；高情感(e=1)：g₀=4.5，覆盖3天间隔。
+
+**4. 固化系数更新**（再固化层，CHI'24 公式9 + 情感加速）：
+
+$$g_n = g_{n-1} + S(t) \times (1 + 0.5 \cdot e_{salience}), \quad S(t) = \tanh\!\left(\frac{t}{2}\right)$$
+
+S(t) 取值范围 [0,1)，间隔越长固化增量越大，模拟间隔效应。
+
+**符号表**：
+
+| 符号 | 含义 |
+|------|------|
+| $r$ | 语义相似度（cosine similarity，0~1） |
+| $e_{salience}$ | 情感显著性分数（LLM三维评估，0~1） |
+| $r_{eff}$ | 情感调制后的有效相关度（0~1） |
+| $t$ | 距上次召回的天数 |
+| $g_n$ | 第 n 次召回后的固化系数 |
+| $S(t)$ | 间隔效应函数，= tanh(t/2) |
 
 ---
 
 #### 情感显著性评估（LLM三维打分）
 
-为精确评估情感显著性，采用 **LLM 三维评估方法**（准确率显著优于规则方法）：
+采用**纯 LLM 方法**评估（当前配置 `method='llm'`）。LLM 不可用时返回 0.0（不施加情感加成），不降级为规则方法，保证分数量纲一致。
 
-**评估维度**（基于 CHI'24 Table 2）：
+**三个评估维度**（权重和 = 1.0）：
 
-1. **情感强度** (Emotional Intensity, 权重 0.4)
-   - 定义：消息中情感的强烈程度
-   - 示例：高分 - "我太开心了！"，低分 - "今天天气不错"
-
-2. **自我披露深度** (Self-Disclosure Depth, 权重 0.4)
-   - 定义：用户透露个人隐私/脆弱性的程度
-   - 示例：高分 - "我从没告诉过别人，我很害怕失败"，低分 - "我是学生"
-
-3. **价值观相关性** (Value Relevance, 权重 0.2)
-   - 定义：是否涉及用户核心价值观
-   - 示例：高分 - "家人对我来说是最重要的"，低分 - "今天吃了面包"
-
-**LLM 提示词**：
-```python
-prompt = f"""
-评估用户消息的情感显著性，分别评分（0-1）：
-
-1. 情感强度 (emotional_intensity)
-2. 自我披露深度 (self_disclosure_depth)
-3. 价值观相关性 (value_relevance)
-
-用户消息：{content}
-
-输出JSON格式：
-{{
-  "emotional_intensity": 0.0-1.0,
-  "self_disclosure_depth": 0.0-1.0,
-  "value_relevance": 0.0-1.0
-}}
-"""
-```
-
-**最终分数计算**：
-```python
-emotional_salience = (
-    0.4 × emotional_intensity +
-    0.4 × self_disclosure_depth +
-    0.2 × value_relevance
-)
-```
+| 维度 | 权重 | 高分示例 | 低分示例 |
+|------|------|---------|---------|
+| 情感强度 (Intensity) | 0.4 | "我真的崩溃了" | "今天天气不错" |
+| 自我披露深度 (Disclosure) | 0.4 | "我从没告诉过别人..." | "我是学生" |
+| 价值观相关性 (Value) | 0.2 | "家人是我最重要的事" | "今天吃了面包" |
 
 **实测案例**：
 
-| 消息 | 强度 | 披露 | 价值 | 最终分数 |
+| 消息 | 强度 | 披露 | 价值 | 情感分 e |
 |------|------|------|------|---------|
-| "今天天气不错" | 0.0 | 0.0 | 0.0 | **0.000** |
-| "呵呵，随便吧" | 0.3 | 0.2 | 0.4 | **0.280** |
-| "说实话，我对未来很迷茫" | 0.7 | 0.7 | 0.7 | **0.700** |
-| "我从没告诉过别人，我很害怕失败" | 0.8 | 1.0 | 0.6 | **0.820** |
+| "今天天气不错" | 0.0 | 0.0 | 0.0 | **0.00** |
+| "说实话，我对未来很迷茫" | 0.7 | 0.7 | 0.7 | **0.70** |
+| "我从没告诉过别人，我很害怕失败" | 0.8 | 1.0 | 0.6 | **0.82** |
+
+情感分对 g_0 的影响：
+
+```
+e=0.00 → g_0 = 3.0 + 1.5×0.00 = 3.0（普通记忆）
+e=0.70 → g_0 = 3.0 + 1.5×0.70 = 4.05
+e=0.82 → g_0 = 3.0 + 1.5×0.82 = 4.23（近乎覆盖3天间隔）
+```
+
+---
+
+#### 当前参数配置
+
+| 配置项 | 值 | 设计依据 |
+|--------|-----|---------|
+| `initial_g` | **3.0** | 适配实验2天最短间隔（r=1时 p≈0.633 > 0.60） |
+| `recall_threshold` | **0.60** | 在2~3天间隔下产生有意义的记忆分化 |
+| `emotional_α` (g₀公式) | **1.5** | 使高情感记忆(e=1) g₀=4.5，覆盖3天间隔 |
+| `emotional_α` (r_eff公式) | **0.3** | 高情感记忆召回相关度最多提升30% |
+| `emotional_α` (再固化公式) | **0.5** | 高情感记忆固化速度最多提升50% |
+| `recent_turns` | 3 | 最近3轮（当前焦点） |
+| `retrieval_top_k` | 5 | 超阈值记忆按概率取前5 |
+| `time_unit` | days | 与实验间隔单位一致 |
 
 ---
 
@@ -434,26 +416,38 @@ emotional_salience = (
 ```python
 def search_with_forgetting_curve(self, user_id, query, ...):
     for msg in messages:
-        # 1. 计算语义相似度
+        # 1. 语义相似度
         similarity = cosine_similarity(query_embedding, msg['embedding'])
+        emotional_salience = msg.get('emotional_salience', 0.0)
 
-        # 2. 计算基础召回概率（遗忘曲线）
-        base_prob = recall_model.calculate_recall_probability(
-            relevance=similarity,
+        # 2. 情感调制相关度（情感融入曲线内部，不外加）
+        r_effective = min(1.0, similarity * (1 + 0.3 * emotional_salience))
+
+        # 3. 计算召回概率（完整遗忘曲线）
+        recall_prob = recall_model.calculate_recall_probability(
+            relevance=r_effective,
             elapsed_time=elapsed_days,
             consolidation_g=msg['consolidation_g']
         )
 
-        # 3. 情感显著性加成
-        emotional_bonus = msg['emotional_salience'] * 0.1
-        recall_prob = min(1.0, base_prob + emotional_bonus)
-
         # 4. 阈值筛选
-        if recall_prob >= 0.86:
+        if recall_prob >= 0.60:
             recalled_memories.append(memory)
 
-            # 5. 更新固化系数（越回忆越牢固）
-            new_g = recall_model.update_consolidation(current_g, elapsed_days)
+            # 5. 召回后更新固化系数（情感加速）
+            new_g = recall_model.update_consolidation(
+                current_g, elapsed_days, emotional_salience=emotional_salience
+            )
+```
+
+**固化时** (`consolidation_service.py`):
+```python
+# 情感显著性 LLM 评估
+emotional_salience = self._calculate_emotional_salience_llm(content, is_user)
+
+# 初始固化系数（情感加成）
+initial_g = 3.0 + 1.5 * emotional_salience
+msg.consolidation_g = initial_g
 ```
 
 **读取时** (`memory_engine.py`):
@@ -465,7 +459,7 @@ def _get_hybrid_context(self, user_id, current_task_id):
     # 2. 短时成分：最近 3 轮
     recent_turns = turns[-3:]
 
-    # 3. 长时成分：动态遗忘曲线检索
+    # 3. 长时成分：动态遗忘曲线检索（仅返回 p_n(t) ≥ 0.60 的记忆）
     retrieved = vector_store.search_with_forgetting_curve(user_id, query)
 
     return f"[用户画像]\n{profile}\n\n[当前对话]\n{recent}\n\n[相关历史线索]\n{retrieved}"
@@ -477,10 +471,10 @@ def _get_hybrid_context(self, user_id, current_task_id):
 |------|------|------|
 | `embedding` | TEXT | 向量（JSON 格式） |
 | `importance_score` | FLOAT | 重要性分数 0-1 |
-| `consolidation_g` | FLOAT | 固化系数（默认 1.0） |
+| `consolidation_g` | FLOAT | 固化系数（初始 3.0，随召回增长） |
 | `recall_count` | INT | 被召回次数 |
 | `last_recall_at` | DATETIME | 上次被召回时间 |
-| `emotional_salience` | FLOAT | 情感显著性分数 0-1 |
+| `emotional_salience` | FLOAT | 情感显著性分数 0-1（LLM评估） |
 
 #### 输出示例
 ```
@@ -489,31 +483,23 @@ def _get_hybrid_context(self, user_id, current_task_id):
 偏好：喜欢爬山、素食主义者
 深层情感需求：希望被理解和认可
 核心价值观：学术追求
+重要事件：对未来职业方向感到迷茫（焦虑）
 
 [当前对话]
 用户：最近压力好大
 AI助手：怎么了？发生什么事了吗？
 用户：论文进展不顺利
 
-[相关历史线索]
-[第1次对话] [相关度:0.87] 用户提到正在准备考博，对未来方向感到迷茫
-[第2次对话] [相关度:0.82] 用户表达过希望被理解的需求
-```
-
-#### 系统提示词
-```
-你拥有两种记忆能力：
-(1) 清晰记得最近的对话内容；
-(2) 能够回想起与当前话题相关的历史细节。
-当用户提到某个话题时，相关的过往记忆会被唤醒。
+[相关历史线索]（召回概率 ≥ 0.60）
+[Task 1] [p=0.71] 用户提到正在准备考博，对未来方向感到迷茫
+[Task 2] [p=0.64] 用户表达过希望被理解的需求
 ```
 
 #### 预期表现
-- 跨时空回忆相关历史
-- 提到某话题时能想起相关的历史细节
-- 经常被提及的记忆更难遗忘
-- 高情感强度的记忆更容易被召回
-- 用户感知：AI 真正理解我，像老朋友一样
+- 跨任务召回与当前话题相关的历史细节
+- 高情感记忆（如"第一次说出来自己很迷茫"）在4周后依然可被唤醒
+- 同一话题被多次提及后，对应记忆 g_n 持续增长，回忆更稳定
+- 用户感知：AI 真正记得我说过的重要的话，像老朋友一样
 
 ---
 
@@ -675,8 +661,8 @@ EXPERIMENT_CONFIG = {
             'retrieval_top_k': 5,
             'forgetting_curve': {
                 'enabled': True,
-                'initial_g': 1.0,
-                'recall_threshold': 0.86,
+                'initial_g': 3.0,       # 适配2天实验间隔
+                'recall_threshold': 0.60, # 适配每周3次实验节奏
                 'time_unit': 'days',
                 'update_on_recall': True
             }

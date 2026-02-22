@@ -491,10 +491,11 @@ class ConsolidationService:
                     msg.emotional_salience = emotional_salience
 
                 # 🔴 双层机制 - 固化层：情感影响初始固化系数
-                # 公式：g_0 = 1.0 + α * emotional_salience
-                # α = 0.5，高情感记忆（如0.8）获得 g_0 = 1.4
+                # 公式：g_0 = 3.0 + 1.5 * emotional_salience
+                # 无情感(e=0): g_0=3.0，覆盖2天间隔（周一→周三）
+                # 高情感(e=1): g_0=4.5，覆盖3天间隔（周五→下周一）
                 if hasattr(msg, 'consolidation_g'):
-                    initial_g = 1.0 + 0.5 * emotional_salience
+                    initial_g = 3.0 + 1.5 * emotional_salience
                     msg.consolidation_g = initial_g
 
                 self.db.session.commit()
@@ -627,9 +628,9 @@ class ConsolidationService:
             return 0.0  # AI消息不计算
 
         if not self.llm or not hasattr(self.llm, 'generate_response'):
-            # LLM不可用，降级为规则方法
-            print(f"[情感打分] LLM不可用，降级为规则方法")
-            return self._calculate_emotional_salience(content, is_user)
+            # LLM不可用，返回中性值 0.0（不施加情感加成，避免引入量纲不一致的规则法分数）
+            print(f"[情感打分] LLM不可用，返回 0.0")
+            return 0.0
 
         # 读取配置权重
         weights = Config.EXPERIMENT_CONFIG.get('emotional_salience', {}).get('weights', {
@@ -718,13 +719,11 @@ class ConsolidationService:
         except json.JSONDecodeError as e:
             print(f"[情感打分] JSON解析失败: {e}")
             print(f"  原始输出: {response[:200] if 'response' in locals() else 'N/A'}")
-            # 降级为规则方法
-            return self._calculate_emotional_salience(content, is_user)
+            return 0.0
 
         except Exception as e:
             print(f"[情感打分] LLM调用失败: {type(e).__name__}: {e}")
-            # 降级为规则方法
-            return self._calculate_emotional_salience(content, is_user)
+            return 0.0
 
     def _calculate_emotional_salience_hybrid(
         self,

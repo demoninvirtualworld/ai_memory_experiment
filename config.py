@@ -51,8 +51,8 @@ class Config:
                 # 动态遗忘曲线参数（CHI论文公式8-9）
                 'forgetting_curve': {
                     'enabled': True,
-                    'initial_g': 1.0,           # 初始固化系数 g_0
-                    'recall_threshold': 0.86,   # 召回概率阈值（CHI论文建议值）
+                    'initial_g': 3.0,           # 初始固化系数 g_0（适配实验间隔2-3天）
+                    'recall_threshold': 0.60,   # 召回概率阈值（适配每周3次实验节奏）
                     'time_unit': 'days',        # 时间单位
                     'update_on_recall': True    # 召回后更新固化系数
                 }

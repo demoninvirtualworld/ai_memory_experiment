@@ -82,8 +82,8 @@ class DynamicMemoryRecall:
 
     def __init__(
         self,
-        initial_g: float = 1.0,
-        recall_threshold: float = 0.86,
+        initial_g: float = 3.0,
+        recall_threshold: float = 0.60,
         time_unit: str = 'days'
     ):
         """
@@ -551,19 +551,20 @@ class VectorStore:
             # 🔴 情感显著性 (CHI'24 增强)
             emotional_salience = msg.get('emotional_salience', 0.0)
 
-            # 计算基础召回概率
-            base_recall_prob = recall_model.calculate_recall_probability(
-                relevance=similarity,
+            # 🔴 双层机制 - 召回层：情感显著性调制语义相关度 r
+            # 将情感因子融入遗忘曲线参数内部，而非在概率上外加线性项
+            # 公式: r_eff = min(1.0, r × (1 + α × emotional_salience))
+            # α = 0.3：高情感记忆在语义匹配时相关度最多提升 30%
+            # 这样 p_n(t) 仍是完整的遗忘曲线概率，阈值 0.86 的语义不变
+            ALPHA_EMOTION = 0.3
+            r_effective = min(1.0, similarity * (1 + ALPHA_EMOTION * emotional_salience))
+
+            # 计算召回概率（情感因子已通过 r_eff 进入曲线内部）
+            recall_prob = recall_model.calculate_recall_probability(
+                relevance=r_effective,
                 elapsed_time=elapsed_days,
                 consolidation_g=consolidation_g
             )
-
-            # 🔴 双层机制 - 召回层：情感显著性短期加成
-            # 公式: final_prob = base_prob + emotional_bonus
-            # emotional_bonus = emotional_salience * 0.05 (最多提升0.05)
-            # 注：权重从0.1降低到0.05，因为固化层也有情感效果
-            emotional_bonus = emotional_salience * 0.05
-            recall_prob = min(1.0, base_recall_prob + emotional_bonus)
 
             # 创建 MemoryItem
             memory = MemoryItem(
