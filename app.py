@@ -20,8 +20,16 @@ from services import MemoryEngine, TimerService, ConsolidationService
 
 # ============ Flask 应用初始化 ============
 
+# 初始化 Flask 实例，__name__ 定位应用路径，static_folder 指定前端静态资源（CSS/JS/图片）的存放目录
 app = Flask(__name__, static_folder='static')
-app.config['SECRET_KEY'] = Config.SECRET_KEY
+# 安全熔断检查：如果处于生产模式（DEBUG=False）但没在环境变量里配置密钥，则强制报错停止启动
+# 这样可以防止在云端部署时，因疏忽而让应用处于“无加密运行”的危险状态
+if not Config.SECRET_KEY and not Config.DEBUG:
+    raise RuntimeError("SECRET_KEY environment variable is required when DEBUG=False")
+# 设置 Flask 的加密密钥：优先使用配置中的密钥，如果没有（且在开发模式下），则自动生成一个随机的 32 位 16 进制强密钥
+# 这个密钥直接决定了 Session（用户会话）和 Cookie 的安全性，防止被恶意篡改
+app.config['SECRET_KEY'] = Config.SECRET_KEY or os.urandom(32).hex()
+# 同步全局配置中的 DEBUG 开关状态，决定是否开启代码热重载和详细报错信息
 app.config['DEBUG'] = Config.DEBUG
 app.config['JSON_AS_ASCII'] = False
 
@@ -30,27 +38,55 @@ CORS(app)
 # ============ 全局服务初始化 ============
 
 # 数据库
-DB_PATH = 'data/experiment.db'
-engine, SessionLocal = init_db(DB_PATH)
+DB_PATH = Config.DB_PATH
+DATABASE_URL = Config.DATABASE_URL
+engine, SessionLocal = init_db(db_path=DB_PATH, database_url=DATABASE_URL)
+
+
+def _mask_database_url(database_url: str) -> str:
+    """Hide credentials in database URL for logs/debug payloads."""
+    if not database_url:
+        return ""
+    if '@' not in database_url:
+        return database_url
+    prefix, suffix = database_url.rsplit('@', 1)
+    scheme = prefix.split('://', 1)[0] if '://' in prefix else prefix
+    return f"{scheme}://***@{suffix}"
+
+
+def _init_llm_manager(config: dict):
+    """Initialize LLM manager with explicit API-key checks."""
+    provider = config.get('model_provider', 'qwen')
+
+    if provider == 'qwen':
+        api_key = config.get('qwen_api_key')
+        if not api_key:
+            print("[startup] QWEN_API_KEY is missing; LLM features are disabled")
+            return None
+        print(f"[startup] model provider: qwen ({config.get('qwen_model')})")
+        return QwenManager(
+            api_key=api_key,
+            base_url=config.get('qwen_base_url'),
+            model=config.get('qwen_model')
+        )
+
+    if provider == 'deepseek':
+        api_key = config.get('deepseek_api_key')
+        if not api_key:
+            print("[startup] DEEPSEEK_API_KEY is missing; LLM features are disabled")
+            return None
+        print("[startup] model provider: deepseek")
+        return DeepSeekManager(
+            api_key=api_key,
+            base_url=config.get('deepseek_base_url')
+        )
+
+    print(f"[startup] unknown model_provider='{provider}', LLM features are disabled")
+    return None
 
 # LLM 管理器
 experiment_config = Config.EXPERIMENT_CONFIG
-if experiment_config['model_provider'] == 'qwen':
-    llm_manager = QwenManager(
-        api_key=experiment_config['qwen_api_key'],
-        base_url=experiment_config['qwen_base_url'],
-        model=experiment_config['qwen_model']
-    )
-    print(f"[启动] 使用通义千问模型: {experiment_config['qwen_model']}")
-else:
-    llm_manager = DeepSeekManager(
-        api_key=experiment_config['deepseek_api_key'],
-        base_url=experiment_config['deepseek_base_url']
-    )
-    print("[启动] 使用 DeepSeek 模型")
-
-# 会话存储（生产环境应使用 Redis）
-active_sessions = {}
+llm_manager = _init_llm_manager(experiment_config)
 
 # 任务定义（静态数据）
 TASKS_DATA = {
@@ -115,12 +151,11 @@ def get_user_from_session(req):
         return None, None
 
     token = auth_header[7:]
-    session_data = active_sessions.get(token)
-    if not session_data:
-        return None, None
-
     db, db_session = get_db()
-    user = db.get_user(session_data['user_id'])
+    user = db.get_user_by_session_token(token, touch=False)
+    if not user:
+        db_session.close()
+        return None, None
     return user, db_session
 
 
@@ -190,9 +225,11 @@ def debug_status():
     try:
         # 测试数据库连接
         user_count = len(db.get_all_users())
+        session_count = db.count_active_sessions()
         db_status = 'OK'
     except Exception as e:
         user_count = 0
+        session_count = 0
         db_status = f'ERROR: {str(e)}'
     finally:
         session.close()
@@ -203,7 +240,7 @@ def debug_status():
     return api_response(True, data={
         'status': 'running',
         'database': {
-            'path': DB_PATH,
+            'path': _mask_database_url(DATABASE_URL) if DATABASE_URL else DB_PATH,
             'status': db_status,
             'user_count': user_count
         },
@@ -211,7 +248,7 @@ def debug_status():
             'provider': experiment_config['model_provider'],
             'status': llm_status
         },
-        'sessions': len(active_sessions),
+        'sessions': session_count,
         'timestamp': datetime.now().isoformat()
     })
 
@@ -221,7 +258,7 @@ def debug_status():
 @app.route('/api/auth/register', methods=['POST'])
 def register():
     """用户注册"""
-    data = request.get_json()
+    data = request.get_json() or {}
 
     username = data.get('username')
     password = data.get('password')
@@ -253,11 +290,7 @@ def register():
             return api_response(False, message='用户名已存在')
 
         # 创建会话
-        token = db.generate_session_token()
-        active_sessions[token] = {
-            'user_id': username,
-            'login_time': datetime.now().isoformat()
-        }
+        token = db.create_session(username, ttl_hours=Config.SESSION_TTL_HOURS)
 
         # 记录登录日志
         db.log_event(username, 'register')
@@ -284,7 +317,7 @@ def register():
 @app.route('/api/auth/login', methods=['POST'])
 def login():
     """用户登录"""
-    data = request.get_json()
+    data = request.get_json() or {}
 
     username = data.get('username')
     password = data.get('password')
@@ -300,11 +333,7 @@ def login():
         user = db.get_user(username)
 
         # 创建会话
-        token = db.generate_session_token()
-        active_sessions[token] = {
-            'user_id': username,
-            'login_time': datetime.now().isoformat()
-        }
+        token = db.create_session(username, ttl_hours=Config.SESSION_TTL_HOURS)
 
         # 记录登录日志
         db.log_event(username, 'login')
@@ -331,13 +360,23 @@ def login():
 @app.route('/api/auth/logout', methods=['POST'])
 def logout():
     """用户登出"""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     token = data.get('session_token')
 
-    if token in active_sessions:
-        del active_sessions[token]
+    if not token:
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header[7:]
 
-    return api_response(True)
+    if not token:
+        return api_response(False, message='缺少 session_token', status=400)
+
+    db, session = get_db()
+    try:
+        db.delete_session(token)
+        return api_response(True)
+    finally:
+        session.close()
 
 
 # ============ 用户 API ============
@@ -666,8 +705,10 @@ def get_ai_response(user, session):
     """获取 AI 回复（非流式）"""
     if user.user_type == 'admin':
         return api_response(False, message='管理员不能与AI交互', status=403)
+    if not llm_manager:
+        return api_response(False, message='LLM 未配置，请联系管理员', status=503)
 
-    data = request.get_json()
+    data = request.get_json() or {}
     task_id = data.get('taskId')
     user_message = data.get('userMessage')
     response_style = data.get('responseStyle', 'high')
@@ -748,8 +789,11 @@ def get_ai_response_stream(user, session):
     if user.user_type == 'admin':
         session.close()
         return api_response(False, message='管理员不能与AI交互', status=403)
+    if not llm_manager:
+        session.close()
+        return api_response(False, message='LLM 未配置，请联系管理员', status=503)
 
-    data = request.get_json()
+    data = request.get_json() or {}
     task_id = data.get('taskId')
     user_message = data.get('userMessage')
     response_style = data.get('responseStyle', 'high')
@@ -1052,9 +1096,19 @@ if __name__ == '__main__':
     print("=" * 50)
     print("AI 记忆能力实验平台 (重构版)")
     print("=" * 50)
-    print(f"数据库: {DB_PATH}")
+    db_target = _mask_database_url(DATABASE_URL) if DATABASE_URL else DB_PATH
+    print(f"数据库: {db_target}")
     print(f"LLM: {experiment_config['model_provider']}")
-    print("访问地址: http://localhost:8000")
-    print("调试接口: http://localhost:8000/api/debug")
+    print(f"访问地址: http://localhost:{Config.PORT}")
+    print(f"调试接口: http://localhost:{Config.PORT}/api/debug")
     print("=" * 50)
-    app.run(debug=True, port=8000, host='0.0.0.0')
+    if Config.DEBUG:
+        app.run(debug=True, port=Config.PORT, host=Config.HOST)
+    else:
+        try:
+            from waitress import serve
+            print(f"[startup] waitress server on {Config.HOST}:{Config.PORT}")
+            serve(app, host=Config.HOST, port=Config.PORT)
+        except ImportError:
+            print("[startup] waitress not installed, fallback to Flask server")
+            app.run(debug=False, port=Config.PORT, host=Config.HOST)

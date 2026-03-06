@@ -2,10 +2,23 @@ import os
 from datetime import timedelta
 
 
+def _get_bool_env(name: str, default: bool = False) -> bool:
+    """Parse boolean environment variables consistently."""
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'ai-memory-experiment-secret-key'
-    DEBUG = True
+    SECRET_KEY = os.environ.get('SECRET_KEY')
+    DEBUG = _get_bool_env('DEBUG', False)
     JSON_AS_ASCII = False
+    HOST = os.environ.get('HOST', '0.0.0.0')
+    PORT = int(os.environ.get('PORT', '8000'))
+    DB_PATH = os.environ.get('DB_PATH', 'data/experiment.db')
+    DATABASE_URL = os.environ.get('DATABASE_URL')
+    SESSION_TTL_HOURS = int(os.environ.get('SESSION_TTL_HOURS', '168'))
 
     # 实验配置
     EXPERIMENT_CONFIG = {
@@ -59,15 +72,15 @@ class Config:
             },
         },
         # 通义千问 API 配置
-        'qwen_api_key': os.environ.get('QWEN_API_KEY', 'sk-2574182e8e0343d4a0fa1aaa181d42a8'),  # 需要设置环境变量或填入API Key
+        'qwen_api_key': os.environ.get('QWEN_API_KEY'),  # 需要设置环境变量或填入API Key
         'qwen_base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
         'qwen_model': 'qwen-plus',  # 可选: qwen-turbo, qwen-plus, qwen-max
         'max_context_length': 128000,
         # DeepSeek 备用配置
-        'deepseek_api_key': os.environ.get('DEEPSEEK_API_KEY', 'sk-98536e82c24d4ce59234f32c988eb597'),
+        'deepseek_api_key': os.environ.get('DEEPSEEK_API_KEY'),
         'deepseek_base_url': 'https://api.deepseek.com/v1',
         # 当前使用的模型提供商: 'qwen' 或 'deepseek'
-        'model_provider': 'qwen',
+        'model_provider': os.environ.get('MODEL_PROVIDER', 'qwen').strip().lower(),
         # 🔴 情感显著性配置（方案A+C混合）
         'emotional_salience': {
             # 方法选择: 'rule' (仅规则), 'llm' (纯LLM), 'hybrid' (混合，推荐)

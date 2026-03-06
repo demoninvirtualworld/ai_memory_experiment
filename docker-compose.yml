@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ai_memory_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_memory}
+      POSTGRES_USER: ${POSTGRES_USER:-ai_memory}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ai_memory_password}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ai_memory} -d ${POSTGRES_DB:-ai_memory}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai_memory_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DEBUG: "False"
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      SECRET_KEY: ${SECRET_KEY}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-ai_memory}:${POSTGRES_PASSWORD:-ai_memory_password}@db:5432/${POSTGRES_DB:-ai_memory}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-168}
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-qwen}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+
+volumes:
+  postgres_data:

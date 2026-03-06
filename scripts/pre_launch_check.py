@@ -22,7 +22,7 @@ def check_database():
         db = DBManager(session)
 
         # 检查表是否存在
-        tables = ['users', 'user_tasks', 'chat_messages', 'user_profiles', 'experiment_logs']
+        tables = ['users', 'user_tasks', 'chat_messages', 'user_profiles', 'experiment_logs', 'user_sessions']
         for table in tables:
             count = session.execute(
                 text(f"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='{table}'")

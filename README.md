@@ -16,13 +16,16 @@
 pip install -r requirements.txt
 ```
 
-### 2. 配置 API Key
+### 2. 配置环境变量
 
-编辑 `config.py`，填入 API Key：
+推荐使用环境变量，不要把密钥写在代码里：
 
-```python
-'qwen_api_key': 'your-api-key-here',      # 通义千问
-'deepseek_api_key': 'your-api-key-here',  # DeepSeek (备用)
+```bash
+# Windows PowerShell 示例
+$env:DEBUG="True"
+$env:SECRET_KEY="replace-with-a-random-secret"
+$env:MODEL_PROVIDER="qwen"  # 或 deepseek
+$env:QWEN_API_KEY="your-qwen-api-key"
 ```
 
 - 通义千问: https://bailian.console.aliyun.com/
@@ -48,6 +51,55 @@ python app.py
 |------|--------|------|
 | 管理员 | admin | psy2025 |
 | 被试 | 注册时创建 | 自定义 |
+
+---
+
+## SQLite 迁移到 PostgreSQL（推荐用于多人并发）
+
+### 1. 准备 PostgreSQL 连接串
+
+```bash
+postgresql+psycopg2://user:password@host:5432/dbname
+```
+
+### 2. 执行迁移脚本
+
+```bash
+# Windows PowerShell 示例
+$env:SOURCE_SQLITE_PATH="data/experiment.db"
+$env:TARGET_DATABASE_URL="postgresql+psycopg2://user:password@host:5432/dbname"
+python scripts/migrate_sqlite_to_postgres.py
+```
+
+### 3. 切换应用到 PostgreSQL
+
+```bash
+$env:DATABASE_URL="postgresql+psycopg2://user:password@host:5432/dbname"
+python app.py
+```
+
+---
+
+## Docker Compose 部署（app + postgres）
+
+### 1. 准备环境变量文件
+
+```bash
+copy .env.docker.example .env
+```
+
+填好 `.env` 中至少以下字段：
+- `SECRET_KEY`
+- `POSTGRES_PASSWORD`
+- `QWEN_API_KEY`（如果要调用 qwen）
+
+### 2. 启动
+
+```bash
+docker compose up -d --build
+```
+
+访问地址：`http://localhost:8000`
 
 ---
 

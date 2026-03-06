@@ -6,12 +6,12 @@
 
 import hashlib
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-from .models import User, UserTask, ChatMessage, ExperimentLog, UserProfile
+from .models import User, UserTask, ChatMessage, ExperimentLog, UserProfile, UserSession
 
 
 class DBManager:
@@ -344,6 +344,71 @@ class DBManager:
     def generate_session_token() -> str:
         """生成会话令牌"""
         return secrets.token_hex(32)
+
+    def create_session(self, user_id: str, ttl_hours: int = 168) -> str:
+        """Create a persistent login session and return its token."""
+        self.delete_expired_sessions()
+
+        token = self.generate_session_token()
+        now = datetime.utcnow()
+        expires_at = now + timedelta(hours=max(1, int(ttl_hours)))
+
+        user_session = UserSession(
+            session_token=token,
+            user_id=user_id,
+            created_at=now,
+            expires_at=expires_at,
+            last_accessed_at=now
+        )
+        self.session.add(user_session)
+        self.session.commit()
+        return token
+
+    def get_user_by_session_token(self, token: str, touch: bool = False) -> Optional[User]:
+        """Resolve a user from a session token if it exists and is not expired."""
+        now = datetime.utcnow()
+
+        user_session = self.session.query(UserSession).filter(
+            UserSession.session_token == token
+        ).first()
+
+        if not user_session:
+            return None
+
+        if user_session.expires_at <= now:
+            self.session.delete(user_session)
+            self.session.commit()
+            return None
+
+        if touch:
+            user_session.last_accessed_at = now
+            self.session.commit()
+
+        return self.get_user(user_session.user_id)
+
+    def delete_session(self, token: str) -> bool:
+        """Delete one session token."""
+        deleted = self.session.query(UserSession).filter(
+            UserSession.session_token == token
+        ).delete(synchronize_session=False)
+        if deleted:
+            self.session.commit()
+        return deleted > 0
+
+    def delete_expired_sessions(self) -> int:
+        """Delete all expired sessions and return deleted count."""
+        deleted = self.session.query(UserSession).filter(
+            UserSession.expires_at <= datetime.utcnow()
+        ).delete(synchronize_session=False)
+        if deleted:
+            self.session.commit()
+        return deleted
+
+    def count_active_sessions(self) -> int:
+        """Count active (non-expired) sessions."""
+        return self.session.query(UserSession).filter(
+            UserSession.expires_at > datetime.utcnow()
+        ).count()
 
     @staticmethod
     def _hash_password(password: str) -> str:

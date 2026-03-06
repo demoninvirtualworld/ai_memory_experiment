@@ -49,6 +49,7 @@ class User(Base):
     # 关联
     tasks = relationship('UserTask', back_populates='user', cascade='all, delete-orphan')
     messages = relationship('ChatMessage', back_populates='user', cascade='all, delete-orphan')
+    sessions = relationship('UserSession', back_populates='user', cascade='all, delete-orphan')
 
     def __repr__(self):
         return f"<User(user_id='{self.user_id}', name='{self.name}', memory_group='{self.memory_group}')>"
@@ -176,6 +177,28 @@ class ExperimentLog(Base):
         return f"<ExperimentLog(user='{self.user_id}', event='{self.event_type}')>"
 
 
+class UserSession(Base):
+    """User login sessions for multi-instance deployments."""
+    __tablename__ = 'user_sessions'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_token = Column(String(128), unique=True, nullable=False, index=True)
+    user_id = Column(String(50), ForeignKey('users.user_id', ondelete='CASCADE'), nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    last_accessed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship('User', back_populates='sessions')
+
+    __table_args__ = (
+        Index('idx_user_sessions_user_expires', 'user_id', 'expires_at'),
+    )
+
+    def __repr__(self):
+        return f"<UserSession(user_id='{self.user_id}', expires_at='{self.expires_at}')>"
+
+
 class UserProfile(Base):
     """用户画像表（L3 要义记忆专用）
 
@@ -221,7 +244,7 @@ class UserProfile(Base):
 
 # ============ 数据库初始化工具 ============
 
-def init_db(db_path: str = 'data/experiment.db'):
+def init_db(db_path: str = 'data/experiment.db', database_url: str = None):
     """
     初始化数据库
 
@@ -231,15 +254,18 @@ def init_db(db_path: str = 'data/experiment.db'):
     Returns:
         engine, SessionLocal
     """
-    # SQLite 连接字符串
-    # check_same_thread=False 允许多线程访问（Flask 需要）
-    database_url = f"sqlite:///{db_path}?check_same_thread=False"
+    if not database_url:
+        database_url = f"sqlite:///{db_path}"
 
-    engine = create_engine(
-        database_url,
-        echo=False,  # 生产环境关闭 SQL 日志
-        pool_pre_ping=True,  # 连接健康检查
-    )
+    engine_kwargs = {
+        'echo': False,  # 生产环境关闭 SQL 日志
+        'pool_pre_ping': True,  # 连接健康检查
+    }
+    if database_url.startswith('sqlite'):
+        # Flask 多线程请求下允许 SQLite 跨线程访问连接
+        engine_kwargs['connect_args'] = {'check_same_thread': False}
+
+    engine = create_engine(database_url, **engine_kwargs)
 
     # 创建所有表
     Base.metadata.create_all(engine)

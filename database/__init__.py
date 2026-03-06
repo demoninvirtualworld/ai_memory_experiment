@@ -10,6 +10,7 @@ from .models import (
     UserTask,
     ChatMessage,
     ExperimentLog,
+    UserSession,
     init_db,
     get_session
 )
@@ -23,6 +24,7 @@ __all__ = [
     'UserTask',
     'ChatMessage',
     'ExperimentLog',
+    'UserSession',
     'init_db',
     'get_session',
     'DBManager',
