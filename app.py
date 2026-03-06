@@ -38,9 +38,12 @@ CORS(app)
 # ============ 全局服务初始化 ============
 
 # 数据库
-DB_PATH = Config.DB_PATH
-DATABASE_URL = Config.DATABASE_URL
-engine, SessionLocal = init_db(db_path=DB_PATH, database_url=DATABASE_URL)
+# 修改这里：直接使用你在 config.py 定义的 SQLALCHEMY_DATABASE_URI
+DATABASE_URL = Config.SQLALCHEMY_DATABASE_URI
+
+# 调用 init_db。
+# 如果你的 init_db 函数还需要 db_path 参数，可以传 None，因为 Postgres 不需要它
+engine, SessionLocal = init_db(database_url=DATABASE_URL)
 
 
 def _mask_database_url(database_url: str) -> str:

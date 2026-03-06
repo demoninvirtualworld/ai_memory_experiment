@@ -1,10 +1,20 @@
-import os
+﻿import os
 from datetime import timedelta
 
 
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'ai-memory-experiment-secret-key'
+    # 数据库配置 (PostgreSQL)
+    # 优先从环境变量读取，如果没有则使用默认的 Docker 内部地址
+    # 注意：这里的 'db' 是 docker-compose 中定义的数据库服务名
+    SQLALCHEMY_DATABASE_URI = os.environ.get(
+        'DATABASE_URL', 
+        'postgresql+psycopg2://ai_memory:lvshengye629617@db:5432/ai_memory'
+    )
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
     DEBUG = True
+    PORT = int(os.environ.get('APP_PORT', 8000))
+    HOST = os.environ.get('APP_HOST', '0.0.0.0') # Docker 内部运行必须用 0.0.0.0
     JSON_AS_ASCII = False
 
     # 实验配置
