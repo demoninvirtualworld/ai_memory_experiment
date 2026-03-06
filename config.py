@@ -2,23 +2,10 @@ import os
 from datetime import timedelta
 
 
-def _get_bool_env(name: str, default: bool = False) -> bool:
-    """Parse boolean environment variables consistently."""
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {'1', 'true', 'yes', 'on'}
-
-
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY')
-    DEBUG = _get_bool_env('DEBUG', False)
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'ai-memory-experiment-secret-key'
+    DEBUG = True
     JSON_AS_ASCII = False
-    HOST = os.environ.get('HOST', '0.0.0.0')
-    PORT = int(os.environ.get('PORT', '8000'))
-    DB_PATH = os.environ.get('DB_PATH', 'data/experiment.db')
-    DATABASE_URL = os.environ.get('DATABASE_URL')
-    SESSION_TTL_HOURS = int(os.environ.get('SESSION_TTL_HOURS', '168'))
 
     # 实验配置
     EXPERIMENT_CONFIG = {
@@ -61,26 +48,26 @@ class Config:
                 'theory': 'Ebbinghaus遗忘曲线 + Tulving陈述性记忆',
                 'recent_turns': 3,  # 最近3轮（当前焦点）
                 'retrieval_top_k': 5,  # 候选池扩大（阈值筛选后取top-k）
-                # 动态遗忘曲线参数（CHI论文公式8-9）
+                # 动态遗忘曲线参数（CHI论文公式8-9）- 预实验调整
                 'forgetting_curve': {
                     'enabled': True,
-                    'initial_g': 3.0,           # 初始固化系数 g_0（适配实验间隔2-3天）
-                    'recall_threshold': 0.60,   # 召回概率阈值（适配每周3次实验节奏）
+                    'initial_g': 2.5,           # 预实验：缩短间隔，增加召回
+                    'recall_threshold': 0.55,   # 预实验：降低阈值，便于观察
                     'time_unit': 'days',        # 时间单位
                     'update_on_recall': True    # 召回后更新固化系数
                 }
             },
         },
         # 通义千问 API 配置
-        'qwen_api_key': os.environ.get('QWEN_API_KEY'),  # 需要设置环境变量或填入API Key
+        'qwen_api_key': os.environ.get('QWEN_API_KEY', 'sk-2574182e8e0343d4a0fa1aaa181d42a8'),  # 需要设置环境变量或填入API Key
         'qwen_base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
         'qwen_model': 'qwen-plus',  # 可选: qwen-turbo, qwen-plus, qwen-max
         'max_context_length': 128000,
         # DeepSeek 备用配置
-        'deepseek_api_key': os.environ.get('DEEPSEEK_API_KEY'),
+        'deepseek_api_key': 'sk-56f90a7ceb014bb194bdd72b7bee3e68',
         'deepseek_base_url': 'https://api.deepseek.com/v1',
         # 当前使用的模型提供商: 'qwen' 或 'deepseek'
-        'model_provider': os.environ.get('MODEL_PROVIDER', 'qwen').strip().lower(),
+        'model_provider': 'qwen',
         # 🔴 情感显著性配置（方案A+C混合）
         'emotional_salience': {
             # 方法选择: 'rule' (仅规则), 'llm' (纯LLM), 'hybrid' (混合，推荐)
