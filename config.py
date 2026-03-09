@@ -16,6 +16,7 @@ class Config:
     PORT = int(os.environ.get('APP_PORT', 8000))
     HOST = os.environ.get('APP_HOST', '0.0.0.0') # Docker 内部运行必须用 0.0.0.0
     JSON_AS_ASCII = False
+    SESSION_TTL_HOURS = int(os.environ.get('SESSION_TTL_HOURS', '168'))
 
     # 实验配置
     EXPERIMENT_CONFIG = {
