@@ -22,8 +22,8 @@ class Config:
     EXPERIMENT_CONFIG = {
         'countdown_time': 15 * 60,  # 15分钟对话时间
         'password': 'experiment123',  # 实验设置密码
-        # 新的四级记忆架构（基于认知心理学理论）
-        'memory_groups': ['sensory_memory', 'working_memory', 'gist_memory', 'hybrid_memory'],
+        # 五级记忆架构（基于认知心理学理论）
+        'memory_groups': ['sensory_memory', 'working_memory', 'gist_memory', 'perfect_recall_memory', 'hybrid_memory'],
         'memory_config': {
             # L1: 感觉记忆 - 无编码，仅当前输入
             'sensory_memory': {
@@ -52,6 +52,13 @@ class Config:
                     'extract_core_values': True,       # 核心价值观
                     'extract_significant_events': True # 高情感强度事件
                 }
+            },
+            # L4a: 完全记忆 - 画像 + 纯语义相似度 Top-K RAG（无遗忘曲线）
+            'perfect_recall_memory': {
+                'description': '完全情节记忆（无衰减RAG）',
+                'theory': 'Tulving陈述性记忆（理想化版本）',
+                'recent_turns': 3,
+                'retrieval_top_k': 5,  # 与 hybrid_memory 一致，保持公平对比
             },
             # L4: 混合记忆 - 动态遗忘曲线（基于CHI'24 Hou et al.）
             'hybrid_memory': {
@@ -110,6 +117,8 @@ class Config:
         'sensory_memory': {'alpha': 0, 'beta': 0, 'gamma': 0},   # 无读取
         'working_memory': {'alpha': 1, 'beta': 0, 'gamma': 0},   # 仅新鲜度
         'gist_memory': {'alpha': 0, 'beta': 0, 'gamma': 1},      # 仅重要性
+        # L4a: 纯语义相似度（无时间衰减，无固化系数）
+        'perfect_recall_memory': {'alpha': 0, 'beta': 1, 'gamma': 0},
         # L4: 动态遗忘曲线参数（对应CHI论文公式）
         # alpha(时间敏感度)对应 e^{-t/g_n}, beta(语义相似度)对应 r, gamma(频率/固化强度)对应 g_n
         'hybrid_memory': {

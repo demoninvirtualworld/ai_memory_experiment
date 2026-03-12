@@ -1,11 +1,12 @@
 """
 记忆引擎 (Memory Engine)
 
-基于认知心理学理论的四级记忆架构实现：
+基于认知心理学理论的五级记忆架构实现：
 - L1 感觉记忆 (sensory_memory): 无编码，返回空
 - L2 工作记忆 (working_memory): Miller 7±2，保留最近N轮
 - L3 要义记忆 (gist_memory): Verbatim→Gist，近期原话+历史摘要
-- L4 混合记忆 (hybrid_memory): 短时焦点+向量检索（Chroma）
+- L4a 完全记忆 (perfect_recall_memory): 画像+纯语义Top-K RAG（无遗忘曲线）
+- L4 混合记忆 (hybrid_memory): 短时焦点+动态遗忘曲线向量检索
 
 所有数据操作通过 DBManager 完成
 向量检索通过 VectorStore 完成
@@ -32,7 +33,8 @@ class MemoryEngine:
     # 默认配置（如果 config.py 中没有）
     WORKING_MEMORY_TURNS = MEMORY_CONFIG.get('working_memory', {}).get('turns', 7)
     RECENT_VERBATIM_TURNS = MEMORY_CONFIG.get('gist_memory', {}).get('recent_turns', 3)
-    RETRIEVAL_TOP_K = MEMORY_CONFIG.get('hybrid_memory', {}).get('retrieval_top_k', 3)
+    RETRIEVAL_TOP_K = MEMORY_CONFIG.get('hybrid_memory', {}).get('retrieval_top_k', 5)
+    PERFECT_RECALL_TOP_K = MEMORY_CONFIG.get('perfect_recall_memory', {}).get('retrieval_top_k', 5)
     GIST_MAX_CHARS = MEMORY_CONFIG.get('gist_memory', {}).get('gist_max_chars', 500)
 
     def __init__(self, db_manager: DBManager, llm_manager=None, vector_store: VectorStore = None):
@@ -78,6 +80,7 @@ class MemoryEngine:
             'sensory_memory': self._get_sensory_context,
             'working_memory': self._get_working_context,
             'gist_memory': self._get_gist_context,
+            'perfect_recall_memory': self._get_perfect_recall_context,
             'hybrid_memory': self._get_hybrid_context,
         }
 
@@ -252,6 +255,102 @@ class MemoryEngine:
         except Exception as e:
             print(f"[MemoryEngine] 读取固化画像失败: {e}")
             return ""
+
+    # ============ L4a: 完全记忆（无遗忘曲线） ============
+
+    def _get_perfect_recall_context(self, user_id: str, current_task_id: int) -> str:
+        """
+        L4a: 完全情节记忆 (Perfect Recall Memory)
+
+        理论对应: Tulving (1972) 陈述性记忆的理想化版本
+        - 情节记忆完整保留，无时间衰减
+        - 纯语义相似度 Top-K 检索（不施加遗忘曲线过滤）
+
+        与 L4 的唯一区别: 召回时不使用遗忘曲线，只用余弦相似度排序
+        与 L3 的区别: 额外检索具体情节原文，而非只有语义摘要画像
+
+        实现（三部分，同 L4）:
+        1. 用户画像: 读取 L3 固化的用户特征（含情感显著性）
+        2. 短时成分: 最近 3 轮
+        3. 长时成分: 纯 Top-K 语义相似度检索（无遗忘曲线）
+        """
+        messages = self.db.get_messages_before_task(user_id, current_task_id)
+
+        if not messages:
+            return ""
+
+        turns = self._messages_to_turns(messages)
+
+        context_parts = []
+
+        # 1. 用户画像（与 L3/L4 完全相同）
+        user_profile = self._get_consolidated_gist(user_id)
+        if user_profile:
+            context_parts.append(f"[用户画像]\n{user_profile}")
+
+        # 2. 最近 3 轮原话
+        if turns:
+            recent_turns = turns[-self.RECENT_VERBATIM_TURNS:]
+            if recent_turns:
+                recent_text = self._format_turns(recent_turns)
+                if recent_text:
+                    context_parts.append(f"[当前对话]\n{recent_text}")
+
+        # 3. 纯语义相似度 Top-K 检索（不使用遗忘曲线）
+        query = self._current_query
+        if query:
+            retrieved_memories = self._get_vector_search_topk(
+                user_id=user_id,
+                query=query,
+                exclude_task_id=current_task_id
+            )
+
+            if retrieved_memories:
+                retrieved_text = self._format_memory_items(retrieved_memories)
+                if retrieved_text:
+                    context_parts.append(f"[相关历史线索]\n{retrieved_text}")
+            elif turns and len(turns) > self.RECENT_VERBATIM_TURNS:
+                # 降级：关键词匹配
+                older_turns = turns[:-self.RECENT_VERBATIM_TURNS]
+                fallback = self._keyword_search(older_turns, query)
+                if fallback:
+                    fallback_text = self._format_turns_with_source(fallback)
+                    if fallback_text:
+                        context_parts.append(f"[相关历史线索]\n{fallback_text}")
+
+        return "\n\n".join(context_parts)
+
+    def _get_vector_search_topk(
+        self,
+        user_id: str,
+        query: str,
+        exclude_task_id: int = None
+    ) -> List[MemoryItem]:
+        """
+        L4a 专用：纯语义相似度 Top-K 检索（不使用遗忘曲线）
+
+        使用 search_weighted 并将权重设为纯相似度（alpha=0, beta=1, gamma=0），
+        确保召回结果只由余弦相似度决定，不受时间衰减影响。
+        """
+        vector_store = self._vector_store or get_vector_store(self.db)
+
+        if not vector_store or not vector_store.db:
+            return []
+
+        try:
+            results = vector_store.search_weighted(
+                user_id=user_id,
+                query=query,
+                exclude_task_id=exclude_task_id,
+                top_k=self.PERFECT_RECALL_TOP_K,
+                alpha=0.0,   # 不考虑时间新鲜度
+                beta=1.0,    # 纯语义相似度
+                gamma=0.0    # 不考虑重要性分数
+            )
+            return results
+        except Exception as e:
+            print(f"[MemoryEngine] L4a 向量检索失败: {e}")
+            return []
 
     # ============ L4: 混合记忆 ============
 

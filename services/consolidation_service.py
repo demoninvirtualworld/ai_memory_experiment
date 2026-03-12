@@ -74,11 +74,21 @@ class ConsolidationService:
                 result = self._consolidate_gist(user_id, task_id)
                 stats.update(result)
 
+            elif memory_group == 'perfect_recall_memory':
+                # L4a: 画像增量更新 + 批量向量生成（与 L4 相同，为 Top-K 检索准备数据）
+                print(f"[Consolidation] 开始 L4a 固化: user={user_id}, task={task_id}")
+                gist_result = self._consolidate_gist(user_id, task_id)
+                vec_result = self._consolidate_vectors(user_id, task_id)
+                stats.update(vec_result)
+                stats['gist_action'] = gist_result.get('action', 'unknown')
+
             elif memory_group == 'hybrid_memory':
-                # L4: 批量向量生成
+                # L4: 画像增量更新 + 批量向量生成（含遗忘曲线所需字段）
                 print(f"[Consolidation] 开始 L4 固化: user={user_id}, task={task_id}")
-                result = self._consolidate_vectors(user_id, task_id)
-                stats.update(result)
+                gist_result = self._consolidate_gist(user_id, task_id)
+                vec_result = self._consolidate_vectors(user_id, task_id)
+                stats.update(vec_result)
+                stats['gist_action'] = gist_result.get('action', 'unknown')
 
             else:
                 # L1, L2 不需要固化
