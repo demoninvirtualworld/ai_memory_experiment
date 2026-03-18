@@ -1,20 +1,80 @@
 ﻿import os
-from datetime import timedelta
+from pathlib import Path
+from urllib.parse import quote_plus
+
+
+BASE_DIR = Path(__file__).resolve().parent
+
+
+def _load_local_env():
+    """Load a local .env file without overriding real environment variables."""
+    env_path = BASE_DIR / '.env'
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding='utf-8-sig').splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+
+        key, value = line.split('=', 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or key in os.environ:
+            continue
+
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+
+        os.environ[key] = value
+
+
+def _as_bool(value, default):
+    if value is None:
+        return default
+    return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _resolve_db_path(value):
+    db_path = Path(value)
+    if not db_path.is_absolute():
+        db_path = BASE_DIR / db_path
+    return db_path
+
+
+def _build_sqlite_url():
+    db_path = _resolve_db_path(os.environ.get('DB_PATH', 'data/experiment.db'))
+    return f"sqlite:///{db_path.as_posix()}"
+
+
+def _build_postgres_url():
+    user = quote_plus(os.environ.get('POSTGRES_USER', 'ai_memory'))
+    password = quote_plus(os.environ.get('POSTGRES_PASSWORD', 'ai_memory_password'))
+    host = os.environ.get('POSTGRES_HOST') or os.environ.get('DB_HOST', '127.0.0.1')
+    port = os.environ.get('POSTGRES_PORT', '5432')
+    database = os.environ.get('POSTGRES_DB', 'ai_memory')
+    return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
+
+
+def _build_database_url():
+    explicit_url = os.environ.get('DATABASE_URL')
+    if explicit_url:
+        return explicit_url
+    if _as_bool(os.environ.get('USE_SQLITE'), False):
+        return _build_sqlite_url()
+    return _build_postgres_url()
+
+
+_load_local_env()
 
 
 class Config:
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'ai-memory-experiment-secret-key'
-    # 数据库配置 (PostgreSQL)
-    # 优先从环境变量读取，如果没有则使用默认的 Docker 内部地址
-    # 注意：这里的 'db' 是 docker-compose 中定义的数据库服务名
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        'DATABASE_URL', 
-        'postgresql+psycopg2://ai_memory:lvshengye629617@db:5432/ai_memory'
-    )
+    SECRET_KEY = os.environ.get('SECRET_KEY')
+    SQLALCHEMY_DATABASE_URI = _build_database_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    DEBUG = True
-    PORT = int(os.environ.get('APP_PORT', 8000))
-    HOST = os.environ.get('APP_HOST', '0.0.0.0') # Docker 内部运行必须用 0.0.0.0
+    DEBUG = _as_bool(os.environ.get('DEBUG'), True)
+    PORT = int(os.environ.get('APP_PORT') or os.environ.get('PORT', 8000))
+    HOST = os.environ.get('APP_HOST') or os.environ.get('HOST', '0.0.0.0') # Docker 内部运行必须用 0.0.0.0
     JSON_AS_ASCII = False
     SESSION_TTL_HOURS = int(os.environ.get('SESSION_TTL_HOURS', '168'))
 
@@ -77,15 +137,15 @@ class Config:
             },
         },
         # 通义千问 API 配置
-        'qwen_api_key': os.environ.get('QWEN_API_KEY', 'sk-2574182e8e0343d4a0fa1aaa181d42a8'),  # 需要设置环境变量或填入API Key
-        'qwen_base_url': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-        'qwen_model': 'qwen-plus',  # 可选: qwen-turbo, qwen-plus, qwen-max
+        'qwen_api_key': os.environ.get('QWEN_API_KEY', ''),
+        'qwen_base_url': os.environ.get('QWEN_BASE_URL', 'https://dashscope.aliyuncs.com/compatible-mode/v1'),
+        'qwen_model': os.environ.get('QWEN_MODEL', 'qwen-plus'),
         'max_context_length': 128000,
         # DeepSeek 备用配置
-        'deepseek_api_key': 'sk-56f90a7ceb014bb194bdd72b7bee3e68',
-        'deepseek_base_url': 'https://api.deepseek.com/v1',
+        'deepseek_api_key': os.environ.get('DEEPSEEK_API_KEY', ''),
+        'deepseek_base_url': os.environ.get('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1'),
         # 当前使用的模型提供商: 'qwen' 或 'deepseek'
-        'model_provider': 'qwen',
+        'model_provider': os.environ.get('MODEL_PROVIDER', 'qwen'),
         # 🔴 情感显著性配置（方案A+C混合）
         'emotional_salience': {
             # 方法选择: 'rule' (仅规则), 'llm' (纯LLM), 'hybrid' (混合，推荐)

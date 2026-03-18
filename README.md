@@ -21,16 +21,24 @@ pip install -r requirements.txt
 ```bash
 # Windows PowerShell 示例
 $env:SECRET_KEY="replace-with-a-random-secret"
+$env:POSTGRES_HOST="127.0.0.1"
+$env:POSTGRES_DB="ai_memory"
+$env:POSTGRES_USER="ai_memory"
+$env:POSTGRES_PASSWORD="replace-with-a-strong-password"
 $env:QWEN_API_KEY="your-qwen-api-key"
 ```
 
 - 通义千问: https://bailian.console.aliyun.com/
 
-### 3. 数据库迁移（首次运行或更新后）
+### 3. 数据库准备
 
 ```bash
-python scripts/migrate_add_dynamic_memory_fields.py
+python scripts/pre_launch_check.py
 ```
+
+- 云端部署默认使用 Postgres，可通过 `DATABASE_URL` 或 `POSTGRES_*` 环境变量配置
+- 首次启动时会自动建表
+- 如果要把旧的 SQLite 数据迁移到 Postgres，使用 `python scripts/migrate_sqlite_to_postgres.py`
 
 ### 4. 启动服务
 

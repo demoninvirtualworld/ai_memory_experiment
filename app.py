@@ -128,7 +128,7 @@ TASKS_DATA = {
 }
 
 # 记忆组别
-MEMORY_GROUPS = ['sensory_memory', 'working_memory', 'gist_memory', 'hybrid_memory']
+MEMORY_GROUPS = ['sensory_memory', 'working_memory', 'gist_memory', 'perfect_recall_memory', 'hybrid_memory']
 
 
 # ============ 辅助函数 ============
@@ -243,7 +243,7 @@ def debug_status():
     return api_response(True, data={
         'status': 'running',
         'database': {
-            'path': _mask_database_url(DATABASE_URL) if DATABASE_URL else DB_PATH,
+            'path': _mask_database_url(DATABASE_URL),
             'status': db_status,
             'user_count': user_count
         },
@@ -1053,6 +1053,11 @@ def build_system_prompt(task_id: int, memory_group: str, memory_text: str) -> st
             "你了解用户的基本情况和主要话题，但具体细节可能模糊。"
             "这就像人类的自然记忆一样——记得'聊过什么'但不一定记得'原话怎么说'。"
         ),
+        "perfect_recall_memory": (
+            "\n\n【记忆模式：完全记忆】你不仅了解用户的长期画像，还能在相关话题出现时回想起较具体的历史细节。"
+            "这些细节不会因时间推移而自然衰减。"
+            "请在合适的时候自然引用相关过往信息，但不要生硬堆砌回忆。"
+        ),
         "hybrid_memory": (
             "\n\n【记忆模式：混合记忆】你拥有两种记忆能力："
             "(1) 清晰记得最近的对话内容；"
@@ -1099,7 +1104,7 @@ if __name__ == '__main__':
     print("=" * 50)
     print("AI 记忆能力实验平台 (重构版)")
     print("=" * 50)
-    db_target = _mask_database_url(DATABASE_URL) if DATABASE_URL else DB_PATH
+    db_target = _mask_database_url(DATABASE_URL)
     print(f"数据库: {db_target}")
     print(f"LLM: {experiment_config['model_provider']}")
     print(f"访问地址: http://localhost:{Config.PORT}")

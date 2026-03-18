@@ -9,30 +9,34 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
+
 def check_database():
     """检查数据库"""
     print("\n[1/6] 检查数据库...")
     try:
         from database import init_db, get_session, DBManager
-        from database.models import User, UserProfile, ChatMessage
-        from sqlalchemy import text
+        from sqlalchemy import inspect
+        from config import Config
 
-        engine, SessionLocal = init_db('data/experiment.db')
+        engine, SessionLocal = init_db(database_url=Config.SQLALCHEMY_DATABASE_URI)
         session = get_session(SessionLocal)
         db = DBManager(session)
 
-        # 检查表是否存在
-        tables = ['users', 'user_tasks', 'chat_messages', 'user_profiles', 'experiment_logs', 'user_sessions']
-        for table in tables:
-            count = session.execute(
-                text(f"SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='{table}'")
-            ).scalar()
-            if count == 0:
-                print(f"  ❌ 表 {table} 不存在")
-                return False
+        inspector = inspect(engine)
+        existing_tables = set(inspector.get_table_names())
+        required_tables = {'users', 'user_tasks', 'chat_messages', 'user_profiles', 'experiment_logs', 'user_sessions'}
+        missing_tables = sorted(required_tables - existing_tables)
+        if missing_tables:
+            print(f"  ❌ 缺少数据表: {', '.join(missing_tables)}")
+            return False
 
-        print("  ✅ 数据库检查通过（5个核心表）")
+        print(f"  ✅ 数据库检查通过（{len(required_tables)} 个核心表）")
         session.close()
+        engine.dispose()
         return True
     except Exception as e:
         print(f"  ❌ 数据库错误: {e}")
@@ -47,16 +51,19 @@ def check_api_keys():
     try:
         from config import Config
 
-        qwen_key = Config.EXPERIMENT_CONFIG.get('qwen_api_key', '')
+        provider = Config.EXPERIMENT_CONFIG.get('model_provider', 'qwen')
+        key_field = 'deepseek_api_key' if provider == 'deepseek' else 'qwen_api_key'
+        provider_label = 'DeepSeek' if provider == 'deepseek' else '通义千问'
+        api_key = Config.EXPERIMENT_CONFIG.get(key_field, '')
 
-        if not qwen_key or qwen_key == 'your-api-key-here':
-            print("  ❌ 通义千问 API Key 未配置")
+        if not api_key or api_key == 'your-api-key-here':
+            print(f"  ❌ {provider_label} API Key 未配置")
             return False
 
-        if qwen_key.startswith('sk-'):
-            print(f"  ✅ API Key 已配置: {qwen_key[:10]}...")
+        if api_key.startswith('sk-'):
+            print(f"  ✅ {provider_label} API Key 已配置: {api_key[:10]}...")
         else:
-            print("  ⚠️  API Key 格式可能不正确")
+            print(f"  ⚠️  {provider_label} API Key 格式可能不正确")
 
         return True
     except Exception as e:
@@ -106,8 +113,9 @@ def check_admin_account():
     print("\n[5/6] 检查管理员账号...")
     try:
         from database import init_db, get_session, DBManager
+        from config import Config
 
-        engine, SessionLocal = init_db('data/experiment.db')
+        engine, SessionLocal = init_db(database_url=Config.SQLALCHEMY_DATABASE_URI)
         session = get_session(SessionLocal)
         db = DBManager(session)
 
@@ -120,6 +128,7 @@ def check_admin_account():
             print("     创建方法: 前端注册或运行 scripts/create_admin.py")
 
         session.close()
+        engine.dispose()
         return True
     except Exception as e:
         print(f"  ❌ 检查失败: {e}")
