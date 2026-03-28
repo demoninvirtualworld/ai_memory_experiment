@@ -560,6 +560,56 @@
         </div>
     </div>
 
+    <!-- 注册前伦理同意模态框 -->
+    <div id="ethics-consent-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] hidden">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4">
+            <div class="flex justify-between items-center p-6 border-b">
+                <h3 class="text-xl font-bold text-blue-500">注册前知情同意</h3>
+                <button id="close-ethics-consent" class="text-gray-500 hover:text-gray-800 p-2 rounded-lg hover:bg-gray-100">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+
+            <div class="p-6 space-y-4">
+                <div class="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-gray-700 leading-6">
+                    <p class="font-medium text-blue-600 mb-2">您即将参与华东师范大学相关人机交互研究实验。</p>
+                    <p>注册前请先阅读伦理说明，并确认您已知晓研究目的、数据使用方式与退出权利。</p>
+                    <ul class="list-disc pl-5 mt-3 space-y-1 text-gray-600">
+                        <li>系统会记录注册信息、对话内容和问卷结果，用于科研分析。</li>
+                        <li>您的参与是自愿的，可随时停止，不影响您的正当权益。</li>
+                        <li>研究数据将按照伦理要求进行去标识化和规范保存。</li>
+                    </ul>
+                </div>
+
+                <a id="open-ethics-proof"
+                   href="/ecnu_ethics_notice.html"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="w-full inline-flex items-center justify-center rounded-lg border border-blue-200 bg-white px-4 py-3 text-blue-600 font-medium hover:bg-blue-50 transition-colors">
+                    <i class="fa fa-file-text-o mr-2"></i>查看华东师范大学伦理说明/证明
+                </a>
+
+                <label class="flex items-start gap-3 rounded-lg border border-gray-200 p-4 cursor-pointer hover:border-blue-300 transition-colors">
+                    <input id="ethics-consent-checkbox" type="checkbox" class="mt-1 h-4 w-4 text-blue-500 rounded border-gray-300 focus:ring-blue-500">
+                    <span class="text-sm text-gray-700 leading-6">
+                        我已阅读相关伦理说明，并同意以自愿方式参与本研究后继续注册。
+                    </span>
+                </label>
+
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <button id="cancel-ethics-consent"
+                            class="flex-1 rounded-lg border border-gray-300 px-4 py-3 text-gray-700 font-medium hover:bg-gray-50 transition-colors">
+                        暂不注册
+                    </button>
+                    <button id="confirm-ethics-consent"
+                            class="flex-1 rounded-lg bg-green-500 px-4 py-3 text-white font-medium hover:bg-green-600 transition-colors">
+                        同意并继续注册
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 历史记录模态框 -->
     <div id="history-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
         <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden">
@@ -1025,6 +1075,8 @@
         };
 
         // 应用状态管理
+        const ETHICS_NOTICE_URL = '/ecnu_ethics_notice.html';
+
         class AppState {
             constructor() {
                 this.currentUser = null;
@@ -1183,6 +1235,7 @@
         class UIManager {
             constructor(appState) {
                 this.appState = appState;
+                this.ethicsConsentAccepted = false;
                 this.elements = this.initializeElements();
                 if (this.elements) {
                     this.initializeEventListeners();
@@ -1208,6 +1261,8 @@
                         'submit-login', 'submit-register', 'login-username', 'login-password',
                         'register-username', 'register-password', 'register-name', 'register-age',
                         'register-gender', 'register-memory-group',
+                        'ethics-consent-modal', 'close-ethics-consent', 'ethics-consent-checkbox',
+                        'cancel-ethics-consent', 'confirm-ethics-consent', 'open-ethics-proof',
 
                         // 内容区域
                         'guest-content', 'normal-user-content', 'admin-user-content',
@@ -1299,6 +1354,18 @@
                 if (this.elements.submitRegister) {
                     this.elements.submitRegister.addEventListener('click', () => this.register());
                 }
+                if (this.elements.closeEthicsConsent) {
+                    this.elements.closeEthicsConsent.addEventListener('click', () => this.hideEthicsConsentModal());
+                }
+                if (this.elements.cancelEthicsConsent) {
+                    this.elements.cancelEthicsConsent.addEventListener('click', () => this.hideEthicsConsentModal());
+                }
+                if (this.elements.confirmEthicsConsent) {
+                    this.elements.confirmEthicsConsent.addEventListener('click', () => this.confirmEthicsConsent());
+                }
+                if (this.elements.openEthicsProof) {
+                    this.elements.openEthicsProof.href = ETHICS_NOTICE_URL;
+                }
 
                 // 消息输入监听
                 if (this.elements.messageInput) {
@@ -1376,6 +1443,14 @@
                             });
                         }
                     });
+
+                if (this.elements.ethicsConsentModal) {
+                    this.elements.ethicsConsentModal.addEventListener('click', (e) => {
+                        if (e.target === this.elements.ethicsConsentModal) {
+                            this.hideEthicsConsentModal();
+                        }
+                    });
+                }
             }
 
             // 初始化UI
@@ -1395,6 +1470,7 @@
                 if (this.elements.authModal) {
                     this.elements.authModal.classList.add('hidden');
                 }
+                this.hideEthicsConsentModal({ preserveState: false });
             }
 
             showLoginForm() {
@@ -1402,9 +1478,46 @@
                 if (this.elements.registerForm) this.elements.registerForm.classList.add('hidden');
             }
 
-            showRegisterForm() {
+            showRegisterForm(force = false) {
+                if (!force && !this.ethicsConsentAccepted) {
+                    this.showEthicsConsentModal();
+                    return;
+                }
                 if (this.elements.loginForm) this.elements.loginForm.classList.add('hidden');
                 if (this.elements.registerForm) this.elements.registerForm.classList.remove('hidden');
+            }
+
+            showEthicsConsentModal() {
+                if (this.elements.ethicsConsentModal) {
+                    this.elements.ethicsConsentModal.classList.remove('hidden');
+                }
+            }
+
+            hideEthicsConsentModal(options = {}) {
+                const { preserveState = true } = options;
+
+                if (this.elements.ethicsConsentModal) {
+                    this.elements.ethicsConsentModal.classList.add('hidden');
+                }
+
+                if (!preserveState) {
+                    this.ethicsConsentAccepted = false;
+                }
+
+                if (this.elements.ethicsConsentCheckbox) {
+                    this.elements.ethicsConsentCheckbox.checked = false;
+                }
+            }
+
+            confirmEthicsConsent() {
+                if (!this.elements.ethicsConsentCheckbox?.checked) {
+                    this.showNotification('请先勾选同意伦理说明后再继续注册');
+                    return;
+                }
+
+                this.ethicsConsentAccepted = true;
+                this.hideEthicsConsentModal();
+                this.showRegisterForm(true);
             }
 
             async login() {
@@ -1448,6 +1561,12 @@
                     return;
                 }
 
+                if (!this.ethicsConsentAccepted) {
+                    this.showEthicsConsentModal();
+                    this.showNotification('请先完成伦理知情同意');
+                    return;
+                }
+
                 try {
                     const response = await ApiService.register({
                         username,
@@ -1455,7 +1574,8 @@
                         name,
                         age: parseInt(age),
                         gender,
-                        memory_group: memoryGroup
+                        memory_group: memoryGroup,
+                        ethics_consent_accepted: true
                     });
 
                     if (response.success) {
@@ -2761,6 +2881,16 @@
             }
 
             hideModal(modal) {
+                if (modal === this.elements?.authModal) {
+                    this.hideAuthModal();
+                    return;
+                }
+
+                if (modal === this.elements?.ethicsConsentModal) {
+                    this.hideEthicsConsentModal();
+                    return;
+                }
+
                 if (modal) {
                     modal.classList.add('hidden');
                 }

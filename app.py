@@ -269,9 +269,13 @@ def register():
     age = data.get('age')
     gender = data.get('gender')
     memory_group = data.get('memory_group', 'sensory_memory')
+    ethics_consent_accepted = data.get('ethics_consent_accepted', False)
 
     if not all([username, password, name, age, gender]):
         return api_response(False, message='请填写所有必填字段')
+
+    if ethics_consent_accepted is not True:
+        return api_response(False, message='注册前请先同意伦理说明')
 
     if memory_group not in MEMORY_GROUPS:
         return api_response(False, message='无效的记忆组别')
