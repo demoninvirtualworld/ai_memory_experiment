@@ -2685,13 +2685,9 @@
                     html += `
                         <label class="flex flex-col items-center cursor-pointer group">
                             <input type="radio" name="${section.id}" value="${opt.value}"
-                                   class="hidden peer" ${opt.value === 4 ? 'checked' : ''}>
-                            <div class="relative" style="width: ${size}px; height: ${size}px;">
-                                <svg class="absolute inset-0" viewBox="0 0 100 100">
-                                    <circle cx="50" cy="50" r="45" fill="#E5E7EB"
-                                            class="peer-checked:fill-blue-500 group-hover:fill-blue-300 transition-colors"/>
-                                    ${opt.value > 3 ? `<circle cx="65" cy="50" r="35" fill="#E5E7EB" class="peer-checked:fill-blue-400 group-hover:fill-blue-200 transition-colors"/>` : ''}
-                                </svg>
+                                   class="hidden peer">
+                            <div class="rounded-full bg-gray-200 peer-checked:bg-blue-500 group-hover:bg-blue-300 transition-colors"
+                                 style="width: ${size}px; height: ${size}px;">
                             </div>
                             <span class="text-xs mt-1 text-gray-500">${opt.label || opt.value}</span>
                         </label>
@@ -2752,7 +2748,7 @@
                             <label class="flex-1 cursor-pointer">
                                 <input type="radio" name="${section.id}_${question.id}"
                                        value="${opt.value}" class="hidden peer"
-                                       ${idx === defaultIndex ? 'checked' : ''}>
+                                       >
                                 <div class="text-center py-2 rounded border border-gray-300
                                            peer-checked:bg-blue-500 peer-checked:text-white peer-checked:border-blue-600
                                            hover:bg-blue-100 transition-colors text-xs">
@@ -2770,8 +2766,9 @@
                                      data-section="${section.id}"
                                      data-question="${question.id}">`;
 
-                    options.forEach((opt, idx) => {
-                        html += `<option value="${opt.value}" ${idx === defaultIndex ? 'selected' : ''}>${opt.label}</option>`;
+                    html += `<option value="" disabled selected>请选择...</option>`;
+                    options.forEach((opt) => {
+                        html += `<option value="${opt.value}">${opt.label}</option>`;
                     });
 
                     html += `</select>`;
@@ -2840,6 +2837,23 @@
             async submitSurvey() {
                 try {
                     // 收集问卷数据
+                    // 检查是否有未填写的题目
+                    const unanswered = [];
+                    document.querySelectorAll('#survey-content select[data-section]').forEach(select => {
+                        if (!select.value) unanswered.push(select);
+                    });
+                    const radioNames = new Set();
+                    document.querySelectorAll('#survey-content input[type="radio"][name]').forEach(r => radioNames.add(r.name));
+                    radioNames.forEach(name => {
+                        const checked = document.querySelector(`#survey-content input[type="radio"][name="${name}"]:checked`);
+                        if (!checked) unanswered.push(name);
+                    });
+
+                    if (unanswered.length > 0) {
+                        this.showNotification('请完成所有题目后再提交');
+                        return;
+                    }
+
                     const questionnaireData = this.collectQuestionnaireData();
 
                     console.log('提交问卷数据:', questionnaireData);
