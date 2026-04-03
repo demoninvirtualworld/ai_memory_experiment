@@ -311,8 +311,8 @@ const QUESTIONNAIRE_CONFIG = {
     },
 
     // 任务4: 告别后
-    4: {
-        title: '任务4 - 告别评估问卷',
+    5: {
+        title: '任务5 - 告别评估问卷',
         description: '请根据整个实验过程的体验，回答以下问题',
         sections: [
             {

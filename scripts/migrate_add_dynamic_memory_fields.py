@@ -1,5 +1,5 @@
 """
-数据库迁移脚本：添加 L4 动态遗忘曲线字段
+数据库迁移脚本：添加 L5 动态遗忘曲线字段
 
 新增字段（chat_messages 表）：
 - consolidation_g: 固化系数 g_n（默认 1.0）
@@ -73,7 +73,7 @@ def verify():
 
 if __name__ == '__main__':
     print("=" * 50)
-    print("L4 动态遗忘曲线字段迁移")
+    print("L5 动态遗忘曲线字段迁移")
     print("=" * 50)
 
     migrate()

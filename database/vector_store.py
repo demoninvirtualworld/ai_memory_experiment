@@ -1,7 +1,7 @@
 """
 向量存储层 (Vector Store) - Numpy 版
 
-使用 Numpy + SQLite 实现 L4 混合记忆检索
+使用 Numpy + SQLite 实现 L5 混合记忆检索
 
 功能：
 - DashScope Embedding API (通义千问 text-embedding-v3)
@@ -25,7 +25,7 @@ from config import Config
 
 @dataclass
 class MemoryItem:
-    """检索结果条目（L4 动态遗忘曲线增强版）"""
+    """检索结果条目（L5 动态遗忘曲线增强版）"""
     message_id: str
     user_id: str
     task_id: int
@@ -349,7 +349,7 @@ def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
 
 class VectorStore:
     """
-    向量存储管理器（L4 动态遗忘曲线增强版）
+    向量存储管理器（L5 动态遗忘曲线增强版）
 
     检索策略:
     1. 旧版静态加权: Score = α·Recency + β·Similarity + γ·Importance

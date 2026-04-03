@@ -119,8 +119,16 @@ TASKS_DATA = {
     },
     4: {
         'id': 4,
+        'title': '情感共鸣与价值观探索',
+        'description': '第四次对话：情感连接与深层价值观交流',
+        'content': '请与AI探讨你的情感需求、价值观或人生意义等深层话题。你可以分享让你感到快乐或困扰的事情，讨论你的核心价值观，或者探讨你对生活的看法。',
+        'time_point': 14,
+        'phase': '情感共鸣与价值观探索'
+    },
+    5: {
+        'id': 5,
         'title': '综合评估与告别',
-        'description': '第四次对话：关系终结与综合评估',
+        'description': '第五次对话：关系终结与综合评估',
         'content': '这是最后一次对话。你可以自由地与AI交流任何话题，回顾整个实验过程的互动，分享你的感受，或者说再见。',
         'time_point': 17,
         'phase': '综合评估与告别'
@@ -569,6 +577,9 @@ def submit_task(user, session, task_id):
             traceback.print_exc()
 
         return api_response(True)
+    except ValueError as e:
+        # 捕获提交验证错误（任务已提交或计时器未过期）
+        return api_response(False, message=str(e), status=400)
     finally:
         session.close()
 

@@ -6,7 +6,7 @@
 
 功能：
 - L3: 提取用户画像增量并更新（含情感显著性）
-- L4: 批量生成向量并存储（含情感显著性分数）
+- L5: 批量生成向量并存储（含情感显著性分数）
 """
 
 import json
@@ -75,16 +75,16 @@ class ConsolidationService:
                 stats.update(result)
 
             elif memory_group == 'perfect_recall_memory':
-                # L4a: 画像增量更新 + 批量向量生成（与 L4 相同，为 Top-K 检索准备数据）
-                print(f"[Consolidation] 开始 L4a 固化: user={user_id}, task={task_id}")
+                # L4: 画像增量更新 + 批量向量生成（与 L5 相同，为 Top-K 检索准备数据）
+                print(f"[Consolidation] 开始 L4 固化: user={user_id}, task={task_id}")
                 gist_result = self._consolidate_gist(user_id, task_id)
                 vec_result = self._consolidate_vectors(user_id, task_id)
                 stats.update(vec_result)
                 stats['gist_action'] = gist_result.get('action', 'unknown')
 
             elif memory_group == 'hybrid_memory':
-                # L4: 画像增量更新 + 批量向量生成（含遗忘曲线所需字段）
-                print(f"[Consolidation] 开始 L4 固化: user={user_id}, task={task_id}")
+                # L5: 画像增量更新 + 批量向量生成（含遗忘曲线所需字段）
+                print(f"[Consolidation] 开始 L5 固化: user={user_id}, task={task_id}")
                 gist_result = self._consolidate_gist(user_id, task_id)
                 vec_result = self._consolidate_vectors(user_id, task_id)
                 stats.update(vec_result)
@@ -387,11 +387,11 @@ class ConsolidationService:
             lines.append(f"{role}：{msg.content}")
         return "\n".join(lines)
 
-    # ============ L4: 向量批量固化 ============
+    # ============ L5: 向量批量固化 ============
 
     def _consolidate_vectors(self, user_id: str, task_id: int) -> Dict:
         """
-        L4 固化：批量生成向量并存储
+        L5 固化：批量生成向量并存储
 
         理论依据：Tulving 陈述性记忆
         - 向量化后的记忆支持语义检索
@@ -401,7 +401,7 @@ class ConsolidationService:
         2. 批量调用 DashScope Embedding API
         3. 更新 chat_messages.embedding 字段
         """
-        print(f"[Consolidation L4] 开始批量向量化: user={user_id}, task={task_id}")
+        print(f"[Consolidation L5] 开始批量向量化: user={user_id}, task={task_id}")
 
         # 1. 获取未向量化的消息
         messages = self.db.get_task_messages(user_id, task_id)
@@ -554,7 +554,7 @@ class ConsolidationService:
 
         情感显著性反映消息的情感强度和深度，用于：
         1. L3 画像提取时识别高情感强度事件
-        2. L4 向量检索时提升情感相关记忆的权重
+        2. L5 向量检索时提升情感相关记忆的权重
 
         规则：
         - 高情感强度词汇：+0.3
@@ -794,7 +794,7 @@ class ConsolidationService:
             for v in profile.values()
         )
 
-        # L4 向量统计
+        # L5 向量统计
         vector_stats = self.vector_store.get_stats(user_id)
         stats.update(vector_stats)
 

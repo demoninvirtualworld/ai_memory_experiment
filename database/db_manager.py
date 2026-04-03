@@ -102,7 +102,7 @@ class DBManager:
         if not user:
             return False
 
-        user.experiment_phase = min(4, max(1, phase))
+        user.experiment_phase = min(5, max(1, phase))
         self.session.commit()
         return True
 
@@ -205,6 +205,14 @@ class DBManager:
     def submit_task(self, user_id: str, task_id: int, questionnaire_data: Dict = None) -> bool:
         """提交任务"""
         task = self.get_or_create_user_task(user_id, task_id)
+
+        # 检查任务是否已提交
+        if task.submitted:
+            raise ValueError("任务已提交，无法重复提交")
+
+        # 检查计时器是否已过期（15分钟对话完成）
+        if not self.check_task_expired(user_id, task_id):
+            raise ValueError("15分钟对话未完成，无法提交问卷")
 
         task.submitted = True
         task.submitted_at = datetime.utcnow()

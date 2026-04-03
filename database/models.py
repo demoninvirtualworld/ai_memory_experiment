@@ -28,7 +28,7 @@ class User(Base):
     # 可选值: sensory_memory, working_memory, gist_memory, hybrid_memory
 
     user_type = Column(String(10), nullable=False, default='normal')  # normal, admin
-    experiment_phase = Column(Integer, default=1)  # 当前实验阶段 1-4
+    experiment_phase = Column(Integer, default=1)  # 当前实验阶段 1-5
 
     # 认证
     password_hash = Column(String(64), nullable=False)
@@ -118,11 +118,11 @@ class ChatMessage(Base):
     content = Column(Text, nullable=False)
     is_user = Column(Boolean, nullable=False)  # True=用户消息, False=AI消息
 
-    # L4 向量检索字段
+    # L5 向量检索字段
     embedding = Column(Text, nullable=True)  # JSON 格式存储向量 [0.1, 0.2, ...]
     importance_score = Column(Float, default=0.5)  # 重要性分数 0-1
 
-    # L4 动态遗忘曲线字段（基于CHI'24 Hou et al.）
+    # L5 动态遗忘曲线字段（基于CHI'24 Hou et al.）
     consolidation_g = Column(Float, default=1.0)      # 固化系数 g_n，越大衰减越慢
     recall_count = Column(Integer, default=0)          # 被召回次数 n
     last_recall_at = Column(DateTime, nullable=True)   # 上次被召回时间

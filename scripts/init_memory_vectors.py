@@ -45,7 +45,7 @@ def init_memory_vectors(
         batch_size: 批处理大小（API 限制 25）
     """
     print("=" * 60)
-    print("L4 向量初始化脚本 (Numpy + SQLite)")
+    print("L5 向量初始化脚本 (Numpy + SQLite)")
     print("=" * 60)
     print(f"数据库: {db_path}")
     print(f"强制模式: {'是' if force else '否'}")
@@ -257,7 +257,7 @@ def verify_embeddings():
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="L4 向量初始化工具 (Numpy 版)")
+    parser = argparse.ArgumentParser(description="L5 向量初始化工具 (Numpy 版)")
     parser.add_argument("--force", action="store_true", help="强制重新生成所有向量")
     parser.add_argument("--stats", action="store_true", help="仅显示统计信息")
     parser.add_argument("--verify", action="store_true", help="验证向量数据完整性")

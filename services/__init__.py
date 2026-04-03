@@ -2,10 +2,10 @@
 服务层模块
 
 包含核心业务逻辑
-- memory_engine: Level 1-4 记忆处理
+- memory_engine: Level 1-5 记忆处理
 - timer_service: 计时器和 120s 间隔管理
 - llm_service: LLM 调用封装 (QwenManager, DeepSeekManager)
-- consolidation_service: 记忆固化服务 (L3/L4)
+- consolidation_service: 记忆固化服务 (L3/L5)
 """
 
 from .memory_engine import MemoryEngine

@@ -88,12 +88,12 @@ docker compose up -d --build
 | **L1** | `sensory_memory` | 感觉记忆 | Atkinson-Shiffrin (1968) | 完全无记忆（控制组） |
 | **L2** | `working_memory` | 工作记忆 | Miller 7±2 (1956) | 近期7轮逐字记录 |
 | **L3** | `gist_memory` | 要义记忆 | Fuzzy Trace Theory (1990) | LLM 语义画像 + 近3轮 |
-| **L4a** | `perfect_recall_memory` | 完全记忆 | Tulving (1972) 理想化版本 | 画像 + 纯语义 Top-K RAG |
-| **L4** | `hybrid_memory` | 混合记忆 | Ebbinghaus + Tulving + CHI'24 | 画像 + RAG + 遗忘曲线 |
+| **L4** | `perfect_recall_memory` | 完全记忆 | Tulving (1972) 理想化版本 | 画像 + 纯语义 Top-K RAG |
+| **L5** | `hybrid_memory` | 混合记忆 | Ebbinghaus + Tulving + CHI'24 | 画像 + RAG + 遗忘曲线 |
 
 **核心对比设计：**
-- L3 vs L4a → 隔离 RAG 的独立效应
-- L4a vs L4 → 隔离遗忘曲线的独立效应
+- L3 vs L4 → 隔离 RAG 的独立效应
+- L4 vs L5 → 隔离遗忘曲线的独立效应
 
 ---
 
@@ -165,7 +165,7 @@ docker compose up -d --build
 
 ---
 
-### L4a: 完全记忆 (Perfect Recall Memory)
+### L4: 完全记忆 (Perfect Recall Memory)
 
 **理论基础：** Tulving (1972) 情节记忆的理想化版本——完整保留所有历史情节，无时间衰减。
 
@@ -176,9 +176,9 @@ docker compose up -d --build
 
 **与 L3 的区别：** 在画像基础上，额外通过向量检索召回具体历史情节原文。
 
-**与 L4 的区别：** 不使用遗忘曲线，所有历史消息的召回概率只取决于语义相似度，不随时间衰减。
+**与 L5 的区别：** 不使用遗忘曲线，所有历史消息的召回概率只取决于语义相似度，不随时间衰减。
 
-**固化机制：** Session 结束后执行画像提取 + 向量 Embedding 生成（与 L4 相同）。
+**固化机制：** Session 结束后执行画像提取 + 向量 Embedding 生成（与 L5 相同）。
 
 **检索方式：**
 ```python
@@ -190,7 +190,7 @@ vector_store.search_weighted(user_id, query, top_k=5, alpha=0.0, beta=1.0, gamma
 
 ---
 
-### L4: 混合记忆 (Hybrid Memory)
+### L5: 混合记忆 (Hybrid Memory)
 
 **理论基础：** Tulving (1972) 陈述性记忆 + Ebbinghaus (1885) 遗忘曲线 + Hou et al. (CHI'24) 动态记忆召回模型。
 
@@ -199,7 +199,7 @@ vector_store.search_weighted(user_id, query, top_k=5, alpha=0.0, beta=1.0, gamma
 [LLM 用户画像] + [最近 3 轮原话] + [遗忘曲线过滤后的相关历史] + 当前输入 → AI 回复
 ```
 
-**与 L4a 的唯一区别：** 召回时施加遗忘曲线过滤，只有召回概率 p(t) ≥ 阈值的记忆才进入上下文。
+**与 L4 的唯一区别：** 召回时施加遗忘曲线过滤，只有召回概率 p(t) ≥ 阈值的记忆才进入上下文。
 
 #### 核心公式
 
@@ -251,7 +251,7 @@ $$g_n = g_{n-1} + S(t) \times (1 + 0.5 \cdot e_{salience}), \quad S(t) = \tanh\!
 
 ### 能力对比
 
-| 能力维度 | L1 | L2 | L3 | L4a | L4 |
+| 能力维度 | L1 | L2 | L3 | L4 | L5 |
 |---------|:--:|:--:|:--:|:---:|:--:|
 | 近期对话记忆 | ✗ | ✓ | ✓ | ✓ | ✓ |
 | LLM 用户画像 | ✗ | ✗ | ✓ | ✓ | ✓ |
@@ -269,9 +269,9 @@ L2:  [最近7轮逐字] + 当前输入 → AI回复
 
 L3:  [用户画像] + [最近3轮] + 当前输入 → AI回复
 
-L4a: [用户画像] + [最近3轮] + [Top-K语义检索] + 当前输入 → AI回复
+L4: [用户画像] + [最近3轮] + [Top-K语义检索] + 当前输入 → AI回复
 
-L4:  [用户画像] + [最近3轮] + [遗忘曲线过滤后的检索] + 当前输入 → AI回复
+L5:  [用户画像] + [最近3轮] + [遗忘曲线过滤后的检索] + 当前输入 → AI回复
 ```
 
 ### 固化机制对比
@@ -281,8 +281,8 @@ L4:  [用户画像] + [最近3轮] + [遗忘曲线过滤后的检索] + 当前�
 | L1 | 无 | 无 | — |
 | L2 | 无 | 无 | — |
 | L3 | Session 结束后 | 用户画像（含情感显著性） | `user_profiles` 表 |
-| L4a | Session 结束后 | 用户画像 + 向量 Embedding | `user_profiles` + `chat_messages` 表 |
-| L4 | Session 结束后 | 用户画像 + 向量 + 固化系数 | `user_profiles` + `chat_messages` 表 |
+| L4 | Session 结束后 | 用户画像 + 向量 Embedding | `user_profiles` + `chat_messages` 表 |
+| L5 | Session 结束后 | 用户画像 + 向量 + 固化系数 | `user_profiles` + `chat_messages` 表 |
 
 ---
 
@@ -314,7 +314,7 @@ ai_memory_experiment/
 │
 ├── services/
 │   ├── memory_engine.py      # 五级记忆引擎（核心）
-│   ├── consolidation_service.py  # 记忆固化服务（L3画像 / L4a,L4向量）
+│   ├── consolidation_service.py  # 记忆固化服务（L3画像 / L4,L5向量）
 │   ├── llm_service.py        # LLM 调用封装
 │   └── timer_service.py      # 计时器服务
 │
@@ -349,15 +349,15 @@ ai_memory_experiment/
 ┌─────────────────┐          ┌──────────────────────────┐
 │   DBManager     │          │       VectorStore        │
 │  消息/画像 CRUD  │          │  Embedding 生成          │
-│  任务进度管理    │          │  Top-K 相似度检索（L4a） │
-└─────────────────┘          │  遗忘曲线检索（L4）      │
+│  任务进度管理    │          │  Top-K 相似度检索（L4） │
+└─────────────────┘          │  遗忘曲线检索（L5）      │
                              └──────────────────────────┘
                             │
                             ▼
 ┌──────────────────────────────────────────────────────────┐
 │               ConsolidationService                        │
 │  L3: 提取用户画像（含情感显著性）                          │
-│  L4a/L4: 画像提取 + 批量向量 Embedding + 情感显著性分数   │
+│  L4/L5: 画像提取 + 批量向量 Embedding + 情感显著性分数   │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -370,9 +370,9 @@ ai_memory_experiment/
 | 多重存储模型 | Atkinson & Shiffrin | 1968 | L1 | 感觉记忆 → 短时记忆 → 长时记忆 |
 | 魔法数字 7±2 | Miller | 1956 | L2 | 工作记忆容量限制 |
 | 模糊痕迹理论 | Brainerd & Reyna | 1990 | L3 | Verbatim vs. Gist 双痕迹 |
-| 情景记忆 | Tulving | 1972 | L4a / L4 | 陈述性记忆，情节存储与提取 |
-| 遗忘曲线 | Ebbinghaus | 1885 | L4 | 指数衰减，间隔效应 |
-| 动态记忆召回 | Hou et al. (CHI'24) | 2024 | L4 | $p_n(t)$ 公式，固化系数更新 |
+| 情景记忆 | Tulving | 1972 | L4 / L5 | 陈述性记忆，情节存储与提取 |
+| 遗忘曲线 | Ebbinghaus | 1885 | L5 | 指数衰减，间隔效应 |
+| 动态记忆召回 | Hou et al. (CHI'24) | 2024 | L5 | $p_n(t)$ 公式，固化系数更新 |
 
 ---
 
