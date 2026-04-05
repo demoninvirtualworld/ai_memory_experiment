@@ -61,7 +61,7 @@ class UserTask(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String(50), ForeignKey('users.user_id', ondelete='CASCADE'), nullable=False)
-    task_id = Column(Integer, nullable=False)  # 任务编号 1-4
+    task_id = Column(Integer, nullable=False)  # 任务编号 1-5
 
     # 任务状态
     submitted = Column(Boolean, default=False)
@@ -113,7 +113,7 @@ class ChatMessage(Base):
     message_id = Column(String(50), unique=True, nullable=False)  # 兼容原有格式 msg_xxx
 
     user_id = Column(String(50), ForeignKey('users.user_id', ondelete='CASCADE'), nullable=False)
-    task_id = Column(Integer, nullable=False)  # 任务编号 1-4
+    task_id = Column(Integer, nullable=False)  # 任务编号 1-5
 
     content = Column(Text, nullable=False)
     is_user = Column(Boolean, nullable=False)  # True=用户消息, False=AI消息

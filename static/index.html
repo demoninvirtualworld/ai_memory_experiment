@@ -295,7 +295,7 @@
             <div class="container mx-auto px-4 py-2">
                 <div class="flex justify-between items-center mb-2">
                     <span class="text-sm font-medium text-gray-500">实验进度</span>
-                    <span id="progress-text" class="text-sm text-gray-500">0/4 次对话</span>
+                    <span id="progress-text" class="text-sm text-gray-500">0/5 次对话</span>
                 </div>
                 <div class="progress-bar">
                     <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
@@ -341,12 +341,13 @@
                         <i class="fa fa-graduation-cap text-blue-500 mr-2"></i>实验指导
                     </h3>
                     <div class="text-sm text-gray-500 space-y-2">
-                        <p>本实验包含4次与AI的对话，分别在：</p>
+                        <p>本实验包含5次与AI的对话，分别在：</p>
                         <ul class="list-disc list-inside space-y-1 ml-2">
                             <li>第1天：关系建立</li>
-                            <li>第3天：记忆测试</li>
-                            <li>第10天：深度互动</li>
-                            <li>第17天：综合评估</li>
+                            <li>第2天：记忆测试</li>
+                            <li>第3天：深度互动</li>
+                            <li>第4天：情感探索</li>
+                            <li>第5天：综合评估</li>
                         </ul>
                         <p class="mt-3">请根据每个阶段的任务要求与AI进行自然对话。</p>
                     </div>
@@ -572,12 +573,15 @@
 
             <div class="p-6 space-y-4">
                 <div class="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-gray-700 leading-6">
-                    <p class="font-medium text-blue-600 mb-2">您即将参与华东师范大学相关人机交互研究实验。</p>
-                    <p>注册前请先阅读伦理说明，并确认您已知晓研究目的、数据使用方式与退出权利。</p>
-                    <ul class="list-disc pl-5 mt-3 space-y-1 text-gray-600">
-                        <li>系统会记录注册信息、对话内容和问卷结果，用于科研分析。</li>
-                        <li>您的参与是自愿的，可随时停止，不影响您的正当权益。</li>
-                        <li>研究数据将按照伦理要求进行去标识化和规范保存。</li>
+                    <p class="font-medium text-blue-600 mb-2">研究课题：基于认知心理学架构的大模型多级记忆系统及其对人机信任的影响研究</p>
+                    <p class="mb-2"><strong>研究负责人：</strong>胡谊（华东师范大学心理与认知科学学院教授）</p>
+                    <p class="mb-3">注册前请仔细阅读完整伦理说明，并确认您已知晓以下关键信息：</p>
+                    <ul class="list-disc pl-5 mt-2 space-y-1 text-gray-600">
+                        <li>研究共5天，每天20分钟（15分钟聊天 + 5分钟问卷）。</li>
+                        <li>完成全部研究流程可获得50元补偿，中途退出按比例补偿。</li>
+                        <li>系统会记录交互文本和问卷数据，用于科研分析（数据去标识化保存至少三年）。</li>
+                        <li>您的参与完全自愿，可随时退出，不影响任何权益。</li>
+                        <li>本研究为低风险，若感不适可随时休息或退出。</li>
                     </ul>
                 </div>
 
@@ -592,7 +596,7 @@
                 <label class="flex items-start gap-3 rounded-lg border border-gray-200 p-4 cursor-pointer hover:border-blue-300 transition-colors">
                     <input id="ethics-consent-checkbox" type="checkbox" class="mt-1 h-4 w-4 text-blue-500 rounded border-gray-300 focus:ring-blue-500">
                     <span class="text-sm text-gray-700 leading-6">
-                        我已阅读相关伦理说明，并同意以自愿方式参与本研究后继续注册。
+                        我已阅读并了解实验全流程，并确认愿意参加该实验。
                     </span>
                 </label>
 
@@ -746,7 +750,7 @@
                                 <div>
                                     <div class="flex justify-between mb-1">
                                         <span class="text-gray-500">已完成任务</span>
-                                        <span id="detail-completed-tasks" class="font-medium">0/4</span>
+                                        <span id="detail-completed-tasks" class="font-medium">0/5</span>
                                     </div>
                                     <div class="progress-bar">
                                         <div id="detail-progress-fill" class="progress-fill" style="width: 0%"></div>
@@ -1215,7 +1219,7 @@
             }
 
             getProgressPercentage() {
-                return (this.getCompletedTasksCount() / 4) * 100;
+                return (this.getCompletedTasksCount() / 5) * 100;
             }
 
             isLoggedIn() {
@@ -1227,7 +1231,7 @@
             }
 
             isAllTasksCompleted() {
-                return this.getCompletedTasksCount() >= 4;
+                return this.getCompletedTasksCount() >= 5;
             }
         }
 
@@ -1431,9 +1435,8 @@
                     this.elements.closeUserDetails.addEventListener('click', () => this.hideUserDetails());
                 }
 
-                // 点击模态框外部关闭
-                [this.elements.authModal, this.elements.historyModal,
-                 this.elements.surveyModal, this.elements.userDetailsModal]
+                // 点击模态框外部关闭（排除登录/注册模态框）
+                [this.elements.historyModal, this.elements.surveyModal, this.elements.userDetailsModal]
                     .forEach(modal => {
                         if (modal) {
                             modal.addEventListener('click', (e) => {
@@ -1511,7 +1514,7 @@
 
             confirmEthicsConsent() {
                 if (!this.elements.ethicsConsentCheckbox?.checked) {
-                    this.showNotification('请先勾选同意伦理说明后再继续注册');
+                    this.showNotification('请先勾选知情同意后再继续注册');
                     return;
                 }
 
@@ -1563,7 +1566,7 @@
 
                 if (!this.ethicsConsentAccepted) {
                     this.showEthicsConsentModal();
-                    this.showNotification('请先完成伦理知情同意');
+                    this.showNotification('请先完成知情同意');
                     return;
                 }
 
@@ -1713,7 +1716,7 @@
 
                         <div class="grid grid-cols-2 gap-4 mb-3">
                             <div class="bg-blue-50 rounded-lg p-2 text-center">
-                                <div class="text-lg font-bold text-blue-500">${user.completed_tasks || 0}/4</div>
+                                <div class="text-lg font-bold text-blue-500">${user.completed_tasks || 0}/5</div>
                                 <div class="text-xs text-gray-500">已完成任务</div>
                             </div>
                             <div class="bg-green-50 rounded-lg p-2 text-center">
@@ -1817,8 +1820,8 @@
 
                 // 更新实验进度
                 const completedTasks = user.completed_tasks || 0;
-                const progressPercentage = (completedTasks / 4) * 100;
-                if (this.elements.detailCompletedTasks) this.elements.detailCompletedTasks.textContent = `${completedTasks}/4`;
+                const progressPercentage = (completedTasks / 5) * 100;
+                if (this.elements.detailCompletedTasks) this.elements.detailCompletedTasks.textContent = `${completedTasks}/5`;
                 if (this.elements.detailProgressFill) this.elements.detailProgressFill.style.width = `${progressPercentage}%`;
                 if (this.elements.detailExperimentPhase) this.elements.detailExperimentPhase.textContent = `阶段 ${user.experiment_phase || 1}`;
                 if (this.elements.detailTotalMessages) this.elements.detailTotalMessages.textContent = user.total_messages || 0;
@@ -2506,7 +2509,7 @@
                 const percentage = this.appState.getProgressPercentage();
 
                 if (this.elements.progressText) {
-                    this.elements.progressText.textContent = `${completed}/4 次对话`;
+                    this.elements.progressText.textContent = `${completed}/5 次对话`;
                 }
                 if (this.elements.progressFill) {
                     this.elements.progressFill.style.width = `${percentage}%`;

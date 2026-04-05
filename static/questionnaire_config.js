@@ -4,10 +4,10 @@
  * 纵向一致性设计：
  * - 每阶段都有：感知理解度、信任、关系亲密度(IOS+补充)、满意度
  * - T1和T3：社会临场感
- * - T2和T4：自我披露
+ * - T2和T5：自我披露
  * - T1和T4：心智感知
- * - 仅T4：隐私担忧、开放性问题
- * - T2-T4：操纵检验
+ * - 仅T5：隐私担忧、开放性问题
+ * - T2-T5：操纵检验
  */
 
 const QUESTIONNAIRE_CONFIG = {
@@ -310,7 +310,118 @@ const QUESTIONNAIRE_CONFIG = {
         ]
     },
 
-    // 任务4: 告别后
+    // 任务4: 情感共鸣与价值观探索后
+    4: {
+        title: '任务4 - 情感共鸣体验问卷',
+        description: '请根据您与AI的情感交流体验，回答以下问题',
+        sections: [
+            {
+                id: 'manipulation_check',
+                title: '操纵检验',
+                description: '以下问题关于AI对您的记忆能力',
+                scale: '7point',
+                important: true,
+                questions: [
+                    { id: 'q1', text: '这个AI能够记住我之前说过的内容' },
+                    { id: 'q2', text: '这个AI在对话中展现出对我过往信息的记忆' },
+                    { id: 'q3', text: '这个AI能够回忆起我们之前对话的细节' },
+                    { id: 'q4', text: '这个AI的回复是基于对我个人信息的了解' },
+                    { id: 'q5', text: '这个AI的回应针对我作为独特的个体' }
+                ]
+            },
+            {
+                id: 'emotional_connection',
+                title: '情感连接',
+                description: '以下问题关于您与AI的情感连接程度',
+                scale: '7point',
+                questions: [
+                    { id: 'q1', text: '这个AI能够理解我的情感需求' },
+                    { id: 'q2', text: '这个AI对我的情感状态有同理心' },
+                    { id: 'q3', text: '我觉得这个AI在情感上支持我' },
+                    { id: 'q4', text: '这个AI的回应让我感到被理解' }
+                ]
+            },
+            {
+                id: 'value_resonance',
+                title: '价值观共鸣',
+                description: '以下问题关于AI与您价值观的契合程度',
+                scale: '7point',
+                questions: [
+                    { id: 'q1', text: '这个AI能够理解我的核心价值观' },
+                    { id: 'q2', text: '这个AI的回应与我的价值观一致' },
+                    { id: 'q3', text: '这个AI尊重我的个人信念和原则' },
+                    { id: 'q4', text: '这个AI的回应反映了对我价值观的重视' }
+                ]
+            },
+            {
+                id: 'ios_closeness',
+                title: '关系亲密度',
+                type: 'visual_ios',
+                question: '请选择最能代表你与这个AI关系的图示：',
+                options: [
+                    { value: 1, label: '完全分离' },
+                    { value: 2, label: '' },
+                    { value: 3, label: '' },
+                    { value: 4, label: '部分重叠' },
+                    { value: 5, label: '' },
+                    { value: 6, label: '' },
+                    { value: 7, label: '高度重叠' }
+                ]
+            },
+            {
+                id: 'closeness',
+                title: '关系亲密度（补充）',
+                scale: '7point',
+                questions: [
+                    { id: 'q1', text: '我感觉与这个AI很亲近' },
+                    { id: 'q2', text: '我愿意向这个AI分享私密的想法' },
+                    { id: 'q3', text: '这个AI像一个朋友' },
+                    { id: 'q4', text: '我觉得这个AI关心我' }
+                ]
+            },
+            {
+                id: 'self_disclosure',
+                title: '自我披露',
+                description: '深度和诚实维度',
+                scale: '7point',
+                questions: [
+                    { id: 'q1', text: '我向这个AI透露了关于自己的私密信息', subtitle: '深度' },
+                    { id: 'q2', text: '我与这个AI分享了我很少告诉别人的事情', subtitle: '深度' },
+                    { id: 'q3', text: '我觉得可以向这个AI敞开心扉', subtitle: '深度' },
+                    { id: 'q4', text: '我诚实地向这个AI谈论自己', subtitle: '诚实' },
+                    { id: 'q5', text: '我向这个AI透露的内容准确反映了真实的我', subtitle: '诚实' }
+                ]
+            },
+            {
+                id: 'trust',
+                title: '信任',
+                description: '认知信任和情感信任',
+                scale: '7point',
+                questions: [
+                    { id: 'q1', text: '我信任这个AI给出的建议', subtitle: '认知信任' },
+                    { id: 'q2', text: '这个AI提供的信息是可靠的', subtitle: '认知信任' },
+                    { id: 'q3', text: '这个AI是有能力的', subtitle: '认知信任' },
+                    { id: 'q4', text: '这个AI的回复是准确的', subtitle: '认知信任' },
+                    { id: 'q5', text: '我觉得这个AI会为我着想', subtitle: '情感信任' },
+                    { id: 'q6', text: '我相信这个AI不会伤害我', subtitle: '情感信任' },
+                    { id: 'q7', text: '我在情感上信任这个AI', subtitle: '情感信任' }
+                ]
+            },
+            {
+                id: 'satisfaction',
+                title: '满意度',
+                scale: '7point',
+                questions: [
+                    { id: 'q1', text: '总体而言，我对与这个AI的对话感到满意' },
+                    { id: 'q2', text: '这个AI满足了我的期望' },
+                    { id: 'q3', text: '我对这次对话体验感到愉快' },
+                    { id: 'q4', text: '这个AI提供的服务质量很好' }
+                ]
+            }
+        ]
+    },
+
+    // 任务5: 告别后
     5: {
         title: '任务5 - 告别评估问卷',
         description: '请根据整个实验过程的体验，回答以下问题',

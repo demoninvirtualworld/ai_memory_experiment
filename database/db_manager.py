@@ -530,7 +530,7 @@ class DBManager:
             'memory_group': user.memory_group,
             'experiment_phase': user.experiment_phase,
             'completed_tasks': completed_tasks,
-            'total_tasks': 4,
+            'total_tasks': 5,
             'total_messages': total_messages,
             'created_at': user.created_at.isoformat() if user.created_at else None
         }
