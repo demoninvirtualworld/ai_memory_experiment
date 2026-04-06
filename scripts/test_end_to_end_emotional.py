@@ -1,5 +1,5 @@
 """
-端到端测试：LLM情感显著性在L5记忆系统中的实际效果
+端到端测试：LLM情感显著性在E记忆系统中的实际效果
 
 测试流程：
 1. 模拟用户在Task 1中的对话（含高情感消息）
@@ -26,7 +26,7 @@ def test_end_to_end():
     """端到端测试"""
 
     print("=" * 80)
-    print("端到端测试：LLM情感显著性在L5系统中的实际效果")
+    print("端到端测试：LLM情感显著性在E系统中的实际效果")
     print("=" * 80)
 
     # 初始化
@@ -66,7 +66,7 @@ def test_end_to_end():
         name='情感测试用户',
         password='test123',
         user_type='normal',
-        memory_group='hybrid_memory'  # 使用L5混合记忆
+        memory_group='hybrid_memory'  # 使用E混合记忆
     )
     print(f"  用户创建成功: {user.user_id}, 记忆组: {user.memory_group}")
 

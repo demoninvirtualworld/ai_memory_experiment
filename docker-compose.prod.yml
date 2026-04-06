@@ -1,0 +1,109 @@
+version: "3.9"
+
+services:
+  # PostgreSQL数据库
+  db:
+    image: postgres:16-alpine
+    container_name: ai_memory_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_memory}
+      POSTGRES_USER: ${POSTGRES_USER:-ai_memory}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ai_memory} -d ${POSTGRES_DB:-ai_memory}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    command: >
+      postgres
+      -c max_connections=200
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+    networks:
+      - app-network
+
+  # Flask应用
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai_memory_app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DEBUG: "False"
+      HOST: "0.0.0.0"
+      PORT: "8000"
+      SECRET_KEY: ${SECRET_KEY}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-ai_memory}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ai_memory}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-168}
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-qwen}
+      QWEN_API_KEY: ${QWEN_API_KEY}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      # 生产环境优化
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      WORKERS: "4"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - app-network
+    # 使用waitress生产服务器
+    command: >
+      sh -c "python -c 'from waitress import serve; from app import app; serve(app, host=\"0.0.0.0\", port=8000, threads=4)'"
+
+  # Nginx反向代理
+  nginx:
+    image: nginx:1.24-alpine
+    container_name: ai_memory_nginx
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/logs:/var/log/nginx
+      - ./static:/usr/share/nginx/html/static:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+    networks:
+      - app-network
+
+  # Certbot证书自动更新
+  certbot:
+    image: certbot/certbot
+    container_name: ai_memory_certbot
+    volumes:
+      - ./certbot/www:/var/www/certbot:rw
+      - ./certbot/conf:/etc/letsencrypt:rw
+    command: certonly --webroot -w /var/www/certbot --keep-until-expiring --email ${CERTBOT_EMAIL} -d ${DOMAIN_NAME} --agree-tos --no-eff-email
+    networks:
+      - app-network
+
+volumes:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge

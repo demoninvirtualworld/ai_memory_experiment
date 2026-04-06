@@ -19,7 +19,7 @@ print("[警告] 此脚本已弃用")
 print()
 print("请使用新脚本: python scripts/init_memory_vectors.py")
 print()
-print("新脚本使用 Numpy + SQLite 实现 L5 记忆检索，")
+print("新脚本使用 Numpy + SQLite 实现 E 记忆检索，")
 print("无需安装 ChromaDB，更加轻量稳定。")
 print("=" * 60)
 

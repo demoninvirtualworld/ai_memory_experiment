@@ -118,11 +118,11 @@ class ChatMessage(Base):
     content = Column(Text, nullable=False)
     is_user = Column(Boolean, nullable=False)  # True=用户消息, False=AI消息
 
-    # L5 向量检索字段
+    # E 向量检索字段
     embedding = Column(Text, nullable=True)  # JSON 格式存储向量 [0.1, 0.2, ...]
     importance_score = Column(Float, default=0.5)  # 重要性分数 0-1
 
-    # L5 动态遗忘曲线字段（基于CHI'24 Hou et al.）
+    # E 动态遗忘曲线字段（基于CHI'24 Hou et al.）
     consolidation_g = Column(Float, default=1.0)      # 固化系数 g_n，越大衰减越慢
     recall_count = Column(Integer, default=0)          # 被召回次数 n
     last_recall_at = Column(DateTime, nullable=True)   # 上次被召回时间
@@ -200,7 +200,7 @@ class UserSession(Base):
 
 
 class UserProfile(Base):
-    """用户画像表（L3 要义记忆专用）
+    """用户画像表（C 要义记忆专用）
 
     存储从对话中提取的长期特质，支持增量更新
     """
@@ -211,7 +211,7 @@ class UserProfile(Base):
 
     # 画像内容（JSON 格式）
     profile_data = Column(JSON, default=dict)
-    # 格式示例（L3 增强版：含情感显著性）:
+    # 格式示例（C 增强版：含情感显著性）:
     # {
     #   "basic_info": {"age": 25, "occupation": "博士生"},
     #   "preferences": ["素食", "喜欢爬山", "养猫"],

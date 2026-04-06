@@ -11,6 +11,8 @@ import logging
 import os
 from datetime import datetime
 from typing import Optional, Dict, Any
+import sys
+from logging.handlers import RotatingFileHandler
 
 
 class ExperimentLogger:
@@ -203,3 +205,34 @@ def get_logger(name: str = "experiment") -> ExperimentLogger:
         _default_logger = ExperimentLogger(name)
 
     return _default_logger
+
+
+def setup_logger(name, log_file='app.log', level=logging.INFO):
+    """设置生产环境日志"""
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+
+    # 文件处理器（轮转）
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=10485760,  # 10MB
+        backupCount=10
+    )
+    file_handler.setLevel(level)
+
+    # 控制台处理器
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(level)
+
+    # 格式化
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+    return logger

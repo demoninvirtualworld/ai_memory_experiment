@@ -249,6 +249,7 @@ class DBManager:
         response_style: str = None
     ) -> ChatMessage:
         """添加聊天消息"""
+        print(f"[DEBUG DB] 添加消息: 用户={user_id}, 任务={task_id}, 用户消息={is_user}, 内容='{content[:50]}{'...' if len(content) > 50 else ''}'")
         message_id = f"msg_{datetime.utcnow().timestamp()}"
 
         message = ChatMessage(
@@ -535,7 +536,7 @@ class DBManager:
             'created_at': user.created_at.isoformat() if user.created_at else None
         }
 
-    # ============ 用户画像操作（L3 要义记忆专用） ============
+    # ============ 用户画像操作（C 要义记忆专用） ============
 
     def get_user_profile(self, user_id: str) -> Dict[str, Any]:
         """

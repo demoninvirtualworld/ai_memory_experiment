@@ -222,7 +222,7 @@ class DeepSeekManager:
             "Content-Type": "application/json"
         }
 
-    def generate_response(self, messages: List[Dict], max_tokens: int = 2000, temperature: float = 1.5) -> str:
+    def generate_response(self, messages: List[Dict], max_tokens: int = 2000, temperature: float = 0.8) -> str:
         """调用DeepSeek API生成回复"""
         try:
             payload = {
@@ -251,7 +251,7 @@ class DeepSeekManager:
             print(f"调用DeepSeek API失败: {e}")
             return "网络错误，请检查连接后重试。"
 
-    def generate_response_stream(self, messages: List[Dict], max_tokens: int = 2000, temperature: float = 1.5):
+    def generate_response_stream(self, messages: List[Dict], max_tokens: int = 2000, temperature: float = 0.8):
         """调用DeepSeek API生成流式回复（生成器）"""
         try:
             payload = {

@@ -2,11 +2,11 @@
 记忆引擎 (Memory Engine)
 
 基于认知心理学理论的五级记忆架构实现：
-- L1 感觉记忆 (sensory_memory): 无编码，返回空
-- L2 工作记忆 (working_memory): Miller 7±2，保留最近N轮
-- L3 要义记忆 (gist_memory): Verbatim→Gist，近期原话+历史摘要
-- L4 完全记忆 (perfect_recall_memory): 画像+纯语义Top-K RAG（无遗忘曲线）
-- L5 混合记忆 (hybrid_memory): 短时焦点+动态遗忘曲线向量检索
+- A 感觉记忆 (sensory_memory): 无编码，返回空
+- B 工作记忆 (working_memory): Miller 7±2，保留最近N轮
+- C 要义记忆 (gist_memory): Verbatim→Gist，近期原话+历史摘要
+- D 完全记忆 (perfect_recall_memory): 画像+纯语义Top-K RAG（无遗忘曲线）
+- E 混合记忆 (hybrid_memory): 短时焦点+动态遗忘曲线向量检索
 
 所有数据操作通过 DBManager 完成
 向量检索通过 VectorStore 完成
@@ -44,16 +44,16 @@ class MemoryEngine:
         Args:
             db_manager: 数据库管理器实例
             llm_manager: LLM管理器（用于生成摘要，可选）
-            vector_store: 向量存储实例（用于 L5 混合记忆，可选）
+            vector_store: 向量存储实例（用于 E 混合记忆，可选）
         """
         self.db = db_manager
         self.llm_manager = llm_manager
         self._current_query: Optional[str] = None
-        # L5 混合记忆的向量存储
+        # E 混合记忆的向量存储
         self._vector_store = vector_store
 
     def set_current_query(self, query: str):
-        """设置当前查询（用于 L5 混合记忆的相关性检索）"""
+        """设置当前查询（用于 E 混合记忆的相关性检索）"""
         self._current_query = query
 
     def get_memory_context(
@@ -91,11 +91,11 @@ class MemoryEngine:
         # 未知的记忆组别，返回空
         return ""
 
-    # ============ L1: 感觉记忆 ============
+    # ============ A: 感觉记忆 ============
 
     def _get_sensory_context(self, user_id: str, current_task_id: int) -> str:
         """
-        L1: 感觉记忆 (Sensory Memory)
+        A: 感觉记忆 (Sensory Memory)
 
         心理学基础: Atkinson-Shiffrin 感觉寄存器
         - 信息未进入意识加工，无编码
@@ -105,11 +105,11 @@ class MemoryEngine:
         """
         return ""
 
-    # ============ L2: 工作记忆 ============
+    # ============ B: 工作记忆 ============
 
     def _get_working_context(self, user_id: str, current_task_id: int) -> str:
         """
-        L2: 工作记忆 (Working Memory)
+        B: 工作记忆 (Working Memory)
 
         心理学基础: Miller (1956) 7±2 法则
         - 以组块(Chunk)为单位存储
@@ -135,11 +135,11 @@ class MemoryEngine:
         # 格式化输出
         return self._format_turns(recent_turns)
 
-    # ============ L3: 要义记忆 ============
+    # ============ C: 要义记忆 ============
 
     def _get_gist_context(self, user_id: str, current_task_id: int) -> str:
         """
-        L3: 要义记忆 (Gist Memory)
+        C: 要义记忆 (Gist Memory)
 
         心理学基础: Fuzzy Trace Theory (Brainerd & Reyna)
         - Verbatim Trace: 精确但衰退快
@@ -185,7 +185,7 @@ class MemoryEngine:
 
     def _get_consolidated_gist(self, user_id: str) -> str:
         """
-        读取固化的用户画像（L3/L4 通用）
+        读取固化的用户画像（C/D 通用）
 
         包含：
         - 基础字段：basic_info, preferences, constraints, goals, personality, social
@@ -256,21 +256,21 @@ class MemoryEngine:
             print(f"[MemoryEngine] 读取固化画像失败: {e}")
             return ""
 
-    # ============ L4: 完全记忆（无遗忘曲线） ============
+    # ============ D: 完全记忆（无遗忘曲线） ============
 
     def _get_perfect_recall_context(self, user_id: str, current_task_id: int) -> str:
         """
-        L4: 完全情节记忆 (Perfect Recall Memory)
+        D: 完全情节记忆 (Perfect Recall Memory)
 
         理论对应: Tulving (1972) 陈述性记忆的理想化版本
         - 情节记忆完整保留，无时间衰减
         - 纯语义相似度 Top-K 检索（不施加遗忘曲线过滤）
 
-        与 L5 的唯一区别: 召回时不使用遗忘曲线，只用余弦相似度排序
-        与 L3 的区别: 额外检索具体情节原文，而非只有语义摘要画像
+        与 E 的唯一区别: 召回时不使用遗忘曲线，只用余弦相似度排序
+        与 C 的区别: 额外检索具体情节原文，而非只有语义摘要画像
 
-        实现（三部分，同 L5）:
-        1. 用户画像: 读取 L3 固化的用户特征（含情感显著性）
+        实现（三部分，同 E）:
+        1. 用户画像: 读取 C 固化的用户特征（含情感显著性）
         2. 短时成分: 最近 3 轮
         3. 长时成分: 纯 Top-K 语义相似度检索（无遗忘曲线）
         """
@@ -283,7 +283,7 @@ class MemoryEngine:
 
         context_parts = []
 
-        # 1. 用户画像（与 L3/L5 完全相同）
+        # 1. 用户画像（与 C/E 完全相同）
         user_profile = self._get_consolidated_gist(user_id)
         if user_profile:
             context_parts.append(f"[用户画像]\n{user_profile}")
@@ -327,7 +327,7 @@ class MemoryEngine:
         exclude_task_id: int = None
     ) -> List[MemoryItem]:
         """
-        L4 专用：纯语义相似度 Top-K 检索（不使用遗忘曲线）
+        D 专用：纯语义相似度 Top-K 检索（不使用遗忘曲线）
 
         使用 search_weighted 并将权重设为纯相似度（alpha=0, beta=1, gamma=0），
         确保召回结果只由余弦相似度决定，不受时间衰减影响。
@@ -349,14 +349,14 @@ class MemoryEngine:
             )
             return results
         except Exception as e:
-            print(f"[MemoryEngine] L4 向量检索失败: {e}")
+            print(f"[MemoryEngine] D 向量检索失败: {e}")
             return []
 
-    # ============ L5: 混合记忆 ============
+    # ============ E: 混合记忆 ============
 
     def _get_hybrid_context(self, user_id: str, current_task_id: int) -> str:
         """
-        L5: 混合记忆 (Hybrid Long-term Memory)
+        E: 混合记忆 (Hybrid Long-term Memory)
 
         心理学基础: Tulving 陈述性记忆 + 扩散激活 + Ebbinghaus 遗忘曲线
         - 无限容量但受提取线索影响
@@ -364,7 +364,7 @@ class MemoryEngine:
         - 动态遗忘曲线（CHI'24 Hou et al.）
 
         实现（三部分）:
-        1. 用户画像: 读取 L3 固化的用户特征（含情感显著性）
+        1. 用户画像: 读取 C 固化的用户特征（含情感显著性）
         2. 短时成分: 最近 3 轮 (当前焦点)
         3. 长时成分: 动态遗忘曲线检索 + 情感显著性加权
         """
@@ -377,8 +377,8 @@ class MemoryEngine:
 
         context_parts = []
 
-        # 🔴 1. 用户画像: 读取 L3 固化的画像（含情感显著性字段）
-        # L5 比 L3 更强，应该也能获取用户画像信息
+        # 🔴 1. 用户画像: 读取 C 固化的画像（含情感显著性字段）
+        # E 比 C 更强，应该也能获取用户画像信息
         user_profile = self._get_consolidated_gist(user_id)
         if user_profile:
             context_parts.append(f"[用户画像]\n{user_profile}")

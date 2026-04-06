@@ -85,11 +85,11 @@ docker compose up -d --build
 
 | 层级 | 标识 | 名称 | 理论基础 | 核心特点 |
 |------|------|------|---------|---------|
-| **L1** | `sensory_memory` | 感觉记忆 | Atkinson-Shiffrin (1968) | 完全无记忆（控制组） |
-| **L2** | `working_memory` | 工作记忆 | Miller 7±2 (1956) | 近期7轮逐字记录 |
-| **L3** | `gist_memory` | 要义记忆 | Fuzzy Trace Theory (1990) | LLM 语义画像 + 近3轮 |
-| **L4** | `perfect_recall_memory` | 完全记忆 | Tulving (1972) 理想化版本 | 画像 + 纯语义 Top-K RAG |
-| **L5** | `hybrid_memory` | 混合记忆 | Ebbinghaus + Tulving + CHI'24 | 画像 + RAG + 遗忘曲线 |
+| **A** | `sensory_memory` | 感觉记忆 | Atkinson-Shiffrin (1968) | 完全无记忆（控制组） |
+| **B** | `working_memory` | 工作记忆 | Miller 7±2 (1956) | 近期7轮逐字记录 |
+| **C** | `gist_memory` | 要义记忆 | Fuzzy Trace Theory (1990) | LLM 语义画像 + 近3轮 |
+| **D** | `perfect_recall_memory` | 完全记忆 | Tulving (1972) 理想化版本 | 画像 + 纯语义 Top-K RAG |
+| **E** | `hybrid_memory` | 混合记忆 | Ebbinghaus + Tulving + CHI'24 | 画像 + RAG + 遗忘曲线 |
 
 **核心对比设计：**
 - L3 vs L4 → 隔离 RAG 的独立效应
@@ -97,7 +97,7 @@ docker compose up -d --build
 
 ---
 
-### L1: 感觉记忆 (Sensory Memory)
+### A: 感觉记忆 (Sensory Memory)
 
 **理论基础：** Atkinson-Shiffrin 多重存储模型 (1968)，信息未进入意识加工即消失。
 
@@ -115,7 +115,7 @@ docker compose up -d --build
 
 ---
 
-### L2: 工作记忆 (Working Memory)
+### B: 工作记忆 (Working Memory)
 
 **理论基础：** Miller (1956) 魔法数字 7±2，工作记忆容量有限，超出时发生位块替换。
 
@@ -133,7 +133,7 @@ docker compose up -d --build
 
 ---
 
-### L3: 要义记忆 (Gist Memory)
+### C: 要义记忆 (Gist Memory)
 
 **理论基础：** Fuzzy Trace Theory (Brainerd & Reyna, 1990)，语义要义比字面痕迹衰退更慢；融合 CHI'24 情感显著性提取。
 
@@ -165,7 +165,7 @@ docker compose up -d --build
 
 ---
 
-### L4: 完全记忆 (Perfect Recall Memory)
+### D: 完全记忆 (Perfect Recall Memory)
 
 **理论基础：** Tulving (1972) 情节记忆的理想化版本——完整保留所有历史情节，无时间衰减。
 
@@ -190,7 +190,7 @@ vector_store.search_weighted(user_id, query, top_k=5, alpha=0.0, beta=1.0, gamma
 
 ---
 
-### L5: 混合记忆 (Hybrid Memory)
+### E: 混合记忆 (Hybrid Memory)
 
 **理论基础：** Tulving (1972) 陈述性记忆 + Ebbinghaus (1885) 遗忘曲线 + Hou et al. (CHI'24) 动态记忆召回模型。
 
@@ -263,15 +263,15 @@ $$g_n = g_{n-1} + S(t) \times (1 + 0.5 \cdot e_{salience}), \quad S(t) = \tanh\!
 ### 数据流对比
 
 ```
-L1:  当前输入 → AI回复
+A:  当前输入 → AI回复
 
-L2:  [最近7轮逐字] + 当前输入 → AI回复
+B:  [最近7轮逐字] + 当前输入 → AI回复
 
-L3:  [用户画像] + [最近3轮] + 当前输入 → AI回复
+C:  [用户画像] + [最近3轮] + 当前输入 → AI回复
 
-L4: [用户画像] + [最近3轮] + [Top-K语义检索] + 当前输入 → AI回复
+D: [用户画像] + [最近3轮] + [Top-K语义检索] + 当前输入 → AI回复
 
-L5:  [用户画像] + [最近3轮] + [遗忘曲线过滤后的检索] + 当前输入 → AI回复
+E:  [用户画像] + [最近3轮] + [遗忘曲线过滤后的检索] + 当前输入 → AI回复
 ```
 
 ### 固化机制对比
@@ -357,8 +357,8 @@ ai_memory_experiment/
                             ▼
 ┌──────────────────────────────────────────────────────────┐
 │               ConsolidationService                        │
-│  L3: 提取用户画像（含情感显著性）                          │
-│  L4/L5: 画像提取 + 批量向量 Embedding + 情感显著性分数   │
+│  C: 提取用户画像（含情感显著性）                          │
+│  L4/E: 画像提取 + 批量向量 Embedding + 情感显著性分数   │
 └──────────────────────────────────────────────────────────┘
 ```
 

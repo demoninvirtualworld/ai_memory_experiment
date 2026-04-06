@@ -74,11 +74,11 @@
             font-weight: 500;
         }
         /* 新的五级认知记忆架构样式 */
-        .sensory-memory { background-color: #F3F4F6; color: #374151; }  /* L1: 灰色 - 无记忆 */
-        .working-memory { background-color: #DBEAFE; color: #1E40AF; }  /* L2: 蓝色 - 工作记忆 */
-        .gist-memory { background-color: #D1FAE5; color: #065F46; }     /* L3: 绿色 - 要义记忆 */
-        .perfect-recall-memory { background-color: #FEF3C7; color: #92400E; } /* L4: 琥珀色 - 完全记忆 */
-        .hybrid-memory { background-color: #FCE7F3; color: #9D174D; }   /* L5: 粉色 - 混合记忆 */
+        .sensory-memory { background-color: #F3F4F6; color: #374151; }  /* A: 灰色 - 无记忆 */
+        .working-memory { background-color: #DBEAFE; color: #1E40AF; }  /* B: 蓝色 - 工作记忆 */
+        .gist-memory { background-color: #D1FAE5; color: #065F46; }     /* C: 绿色 - 要义记忆 */
+        .perfect-recall-memory { background-color: #FEF3C7; color: #92400E; } /* D: 琥珀色 - 完全记忆 */
+        .hybrid-memory { background-color: #FCE7F3; color: #9D174D; }   /* E: 粉色 - 混合记忆 */
         /* 旧版本样式（向后兼容） */
         .no-memory { background-color: #F3F4F6; color: #374151; }
         .short-memory { background-color: #DBEAFE; color: #1E40AF; }
@@ -538,11 +538,11 @@
                         <label class="block text-sm font-medium text-gray-500 mb-2">记忆组别</label>
                         <select id="register-memory-group"
                                 class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                            <option value="sensory_memory">L1: 感觉记忆（控制组）</option>
-                            <option value="working_memory">L2: 工作记忆（7±2组块）</option>
-                            <option value="gist_memory">L3: 要义记忆（语义编码）</option>
-                            <option value="perfect_recall_memory">L4: 完全记忆（纯语义检索）</option>
-                            <option value="hybrid_memory">L5: 混合记忆（遗忘曲线检索）</option>
+                            <option value="sensory_memory">A</option>
+                            <option value="working_memory">B</option>
+                            <option value="gist_memory">C</option>
+                            <option value="perfect_recall_memory">D</option>
+                            <option value="hybrid_memory">E</option>
                         </select>
                     </div>
 
@@ -1199,16 +1199,16 @@
                 // 新的五级认知记忆架构
                 const badges = {
                     // 新版本命名
-                    'sensory_memory': { class: 'sensory-memory', text: 'L1:感觉' },
-                    'working_memory': { class: 'working-memory', text: 'L2:工作' },
-                    'gist_memory': { class: 'gist-memory', text: 'L3:要义' },
-                    'perfect_recall_memory': { class: 'perfect-recall-memory', text: 'L4:完全' },
-                    'hybrid_memory': { class: 'hybrid-memory', text: 'L5:混合' },
+                    'sensory_memory': { class: 'sensory-memory', text: 'A' },
+                    'working_memory': { class: 'working-memory', text: 'B' },
+                    'gist_memory': { class: 'gist-memory', text: 'C' },
+                    'perfect_recall_memory': { class: 'perfect-recall-memory', text: 'D' },
+                    'hybrid_memory': { class: 'hybrid-memory', text: 'E' },
                     // 旧版本命名（向后兼容）
-                    'no_memory': { class: 'sensory-memory', text: 'L1:感觉' },
-                    'short_memory': { class: 'working-memory', text: 'L2:工作' },
-                    'medium_memory': { class: 'gist-memory', text: 'L3:要义' },
-                    'long_memory': { class: 'hybrid-memory', text: 'L5:混合' }
+                    'no_memory': { class: 'sensory-memory', text: 'A' },
+                    'short_memory': { class: 'working-memory', text: 'B' },
+                    'medium_memory': { class: 'gist-memory', text: 'C' },
+                    'long_memory': { class: 'hybrid-memory', text: 'E' }
                 };
                 return badges[memoryGroup] || { class: 'sensory-memory', text: '未知' };
             }
@@ -1240,6 +1240,7 @@
             constructor(appState) {
                 this.appState = appState;
                 this.ethicsConsentAccepted = false;
+                this.isSending = false;
                 this.elements = this.initializeElements();
                 if (this.elements) {
                     this.initializeEventListeners();
@@ -2002,97 +2003,110 @@
 
             // 聊天功能
             async sendMessage() {
-                if (!this.elements.messageInput) return;
-
-                const message = this.elements.messageInput.value.trim();
-                if (!message || !this.appState.isTaskActive) return;
-
-                // 检查是否是第一条消息，如果是则启动计时器
-                const isFirstMessage = this.appState.messageCount === 0 && !this.appState.conversationTimer;
-                if (isFirstMessage) {
-                    console.log('[DEBUG] 检测到第一条消息，启动计时器');
-                    await this.startConversationTimer();
-                    this.showNotification('⏰ 计时已开始！共15分钟对话时间');
-                }
-
-                // 更新检查点（用于2分钟无操作回退）
-                this.updateMessageCheckpoint();
-
-                // 添加用户消息
-                this.addMessageToChat(message, true);
-                this.elements.messageInput.value = '';
-                if (this.elements.characterCount) {
-                    this.elements.characterCount.textContent = '0/500';
-                }
-                if (this.elements.sendBtn) {
-                    this.elements.sendBtn.disabled = true;
-                }
-                this.appState.messageCount++;
-
-                // 保存用户消息
-                try {
-                    await ApiService.saveChatMessage(
-                        this.appState.currentTaskId,
-                        message,
-                        true
-                    );
-                } catch (error) {
-                    console.error('保存用户消息失败:', error);
-                }
-
-                // 显示输入指示器
-                this.showTypingIndicator();
+                // 防止重复发送
+                if (this.isSending) return;
+                this.isSending = true;
 
                 try {
-                    // 使用流式API获取AI回复
-                    let aiMessageDiv = null;
-                    let aiContentDiv = null;
-                    let fullContent = ''; // 累积完整内容用于markdown渲染
+                    if (!this.elements.messageInput) return;
 
-                    await ApiService.getAIResponseStream(
-                        this.appState.currentTaskId,
-                        message,
-                        'high',
-                        // onChunk - 收到内容片段时调用
-                        (chunk) => {
-                            // 首次收到内容时，隐藏输入指示器并创建消息div
-                            if (!aiMessageDiv) {
+                    const message = this.elements.messageInput.value.trim();
+                    if (!message || !this.appState.isTaskActive) return;
+
+                    // 检查是否是第一条消息，如果是则启动计时器
+                    const isFirstMessage = this.appState.messageCount === 0 && !this.appState.conversationTimer;
+                    if (isFirstMessage) {
+                        console.log('[DEBUG] 检测到第一条消息，启动计时器');
+                        await this.startConversationTimer();
+                        this.showNotification('⏰ 计时已开始！共15分钟对话时间');
+                    }
+
+                    // 更新检查点（用于2分钟无操作回退）
+                    this.updateMessageCheckpoint();
+
+                    // 添加用户消息
+                    this.addMessageToChat(message, true);
+                    this.elements.messageInput.value = '';
+                    if (this.elements.characterCount) {
+                        this.elements.characterCount.textContent = '0/500';
+                    }
+                    if (this.elements.sendBtn) {
+                        this.elements.sendBtn.disabled = true;
+                    }
+                    this.appState.messageCount++;
+
+                    // 保存用户消息（由后端统一保存，避免重复）
+                    // try {
+                    //     await ApiService.saveChatMessage(
+                    //         this.appState.currentTaskId,
+                    //         message,
+                    //         true
+                    //     );
+                    // } catch (error) {
+                    //     console.error('保存用户消息失败:', error);
+                    // }
+
+                    // 显示输入指示器
+                    this.showTypingIndicator();
+
+                    try {
+                        // 使用流式API获取AI回复
+                        let aiMessageDiv = null;
+                        let aiContentDiv = null;
+                        let fullContent = ''; // 累积完整内容用于markdown渲染
+
+                        await ApiService.getAIResponseStream(
+                            this.appState.currentTaskId,
+                            message,
+                            'high',
+                            // onChunk - 收到内容片段时调用
+                            (chunk) => {
+                                // 首次收到内容时，隐藏输入指示器并创建消息div
+                                if (!aiMessageDiv) {
+                                    this.hideTypingIndicator();
+                                    const result = this.createStreamingMessageDiv();
+                                    aiMessageDiv = result.messageDiv;
+                                    aiContentDiv = result.contentDiv;
+                                }
+
+                                // 累积内容
+                                fullContent += chunk;
+
+                                // 渲染Markdown并更新显示
+                                if (aiContentDiv) {
+                                    const renderedHtml = this.md.render(fullContent);
+                                    aiContentDiv.innerHTML = renderedHtml;
+                                    // 滚动到底部
+                                    this.elements.chatContainer.scrollTop = this.elements.chatContainer.scrollHeight;
+                                }
+                            },
+                            // onComplete - 流式传输完成时调用
+                            () => {
+                                console.log('AI回复完成');
+                                this.appState.messageCount++;
+                                if (this.elements.messageCount) {
+                                    this.elements.messageCount.textContent = this.appState.messageCount;
+                                }
+                            },
+                            // onError - 发生错误时调用
+                            (error) => {
+                                console.error('流式API错误:', error);
                                 this.hideTypingIndicator();
-                                const result = this.createStreamingMessageDiv();
-                                aiMessageDiv = result.messageDiv;
-                                aiContentDiv = result.contentDiv;
+                                this.addMessageToChat(error || '网络错误，请检查连接后重试。', false);
                             }
-
-                            // 累积内容
-                            fullContent += chunk;
-
-                            // 渲染Markdown并更新显示
-                            if (aiContentDiv) {
-                                const renderedHtml = this.md.render(fullContent);
-                                aiContentDiv.innerHTML = renderedHtml;
-                                // 滚动到底部
-                                this.elements.chatContainer.scrollTop = this.elements.chatContainer.scrollHeight;
-                            }
-                        },
-                        // onComplete - 流式传输完成时调用
-                        () => {
-                            console.log('AI回复完成');
-                            this.appState.messageCount++;
-                            if (this.elements.messageCount) {
-                                this.elements.messageCount.textContent = this.appState.messageCount;
-                            }
-                        },
-                        // onError - 发生错误时调用
-                        (error) => {
-                            console.error('流式API错误:', error);
-                            this.hideTypingIndicator();
-                            this.addMessageToChat(error || '网络错误，请检查连接后重试。', false);
-                        }
-                    );
-                } catch (error) {
-                    console.error('发送消息失败:', error);
-                    this.hideTypingIndicator();
-                    this.addMessageToChat('网络错误，请检查连接后重试。', false);
+                        );
+                    } catch (error) {
+                        console.error('发送消息失败:', error);
+                        this.hideTypingIndicator();
+                        this.addMessageToChat('网络错误，请检查连接后重试。', false);
+                    }
+                } finally {
+                    this.isSending = false;
+                    // 根据输入值重新启用发送按钮
+                    if (this.elements.messageInput && this.elements.sendBtn) {
+                        const length = this.elements.messageInput.value.trim().length;
+                        this.elements.sendBtn.disabled = !(length > 0 && length <= 500);
+                    }
                 }
             }
 

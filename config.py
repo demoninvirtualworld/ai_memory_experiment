@@ -85,21 +85,21 @@ class Config:
         # 五级记忆架构（基于认知心理学理论）
         'memory_groups': ['sensory_memory', 'working_memory', 'gist_memory', 'perfect_recall_memory', 'hybrid_memory'],
         'memory_config': {
-            # L1: 感觉记忆 - 无编码，仅当前输入
+            # A: 感觉记忆 - 无编码，仅当前输入
             'sensory_memory': {
                 'description': '感觉记忆（控制组）',
                 'theory': 'Atkinson-Shiffrin感觉寄存器',
                 'capacity': 0,
                 'turns': 0,
             },
-            # L2: 工作记忆 - Miller 7±2 法则
+            # B: 工作记忆 - Miller 7±2 法则
             'working_memory': {
                 'description': '工作记忆（7±2组块）',
                 'theory': 'Miller 1956',
                 'capacity': 7,  # 7轮对话
                 'turns': 7,
             },
-            # L3: 要义记忆 - Verbatim → Gist 转化 + 情感显著性
+            # C: 要义记忆 - Verbatim → Gist 转化 + 情感显著性
             'gist_memory': {
                 'description': '要义记忆（语义编码+情感显著性）',
                 'theory': 'Fuzzy Trace Theory + Emotional Salience',
@@ -113,14 +113,14 @@ class Config:
                     'extract_significant_events': True # 高情感强度事件
                 }
             },
-            # L4: 完全记忆 - 画像 + 纯语义相似度 Top-K RAG（无遗忘曲线）
+            # D: 完全记忆 - 画像 + 纯语义相似度 Top-K RAG（无遗忘曲线）
             'perfect_recall_memory': {
                 'description': '完全情节记忆（无衰减RAG）',
                 'theory': 'Tulving陈述性记忆（理想化版本）',
                 'recent_turns': 3,
                 'retrieval_top_k': 5,  # 与 hybrid_memory 一致，保持公平对比
             },
-            # L5: 混合记忆 - 动态遗忘曲线（基于CHI'24 Hou et al.）
+            # E: 混合记忆 - 动态遗忘曲线（基于CHI'24 Hou et al.）
             'hybrid_memory': {
                 'description': '混合记忆（动态遗忘曲线）',
                 'theory': 'Ebbinghaus遗忘曲线 + Tulving陈述性记忆',
@@ -177,9 +177,9 @@ class Config:
         'sensory_memory': {'alpha': 0, 'beta': 0, 'gamma': 0},   # 无读取
         'working_memory': {'alpha': 1, 'beta': 0, 'gamma': 0},   # 仅新鲜度
         'gist_memory': {'alpha': 0, 'beta': 0, 'gamma': 1},      # 仅重要性
-        # L4: 纯语义相似度（无时间衰减，无固化系数）
+        # D: 纯语义相似度（无时间衰减，无固化系数）
         'perfect_recall_memory': {'alpha': 0, 'beta': 1, 'gamma': 0},
-        # L5: 动态遗忘曲线参数（对应CHI论文公式）
+        # E: 动态遗忘曲线参数（对应CHI论文公式）
         # alpha(时间敏感度)对应 e^{-t/g_n}, beta(语义相似度)对应 r, gamma(频率/固化强度)对应 g_n
         'hybrid_memory': {
             'alpha': 0.3,   # 时间衰减敏感度（融入遗忘曲线）

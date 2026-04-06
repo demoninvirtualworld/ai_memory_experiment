@@ -17,6 +17,7 @@ from config import Config
 from services.llm_service import QwenManager, DeepSeekManager
 from database import init_db, get_session, DBManager
 from services import MemoryEngine, TimerService, ConsolidationService
+from sqlalchemy import text
 
 # ============ Flask 应用初始化 ============
 
@@ -770,11 +771,18 @@ def get_ai_response(user, session):
             role = "user" if msg.is_user else "assistant"
             messages.append({"role": role, "content": msg.content})
 
-        # 添加当前消息
-        messages.append({"role": "user", "content": user_message})
+        # 当前消息已通过 task_messages 包含，无需重复添加
+        # messages.append({"role": "user", "content": user_message})
+
+        # 调试：打印构建的消息列表
+        print(f"[DEBUG] 用户 {user.user_id} 任务 {task_id} 构建的消息列表:")
+        for i, msg in enumerate(messages):
+            content_preview = msg['content'][:100] + "..." if len(msg['content']) > 100 else msg['content']
+            print(f"  [{i}] {msg['role']}: {content_preview}")
+        print(f"[DEBUG] 总计 {len(messages)} 条消息")
 
         # 6. 调用 LLM
-        temperature = 0.9 if response_style == 'high' else 0.6
+        temperature = 0.7 if response_style == 'high' else 0.5
         max_tokens = 2000 if response_style == 'high' else 1000
 
         ai_response = llm_manager.generate_response(
@@ -853,9 +861,17 @@ def get_ai_response_stream(user, session):
     for msg in task_messages[-10:]:
         role = "user" if msg.is_user else "assistant"
         messages.append({"role": role, "content": msg.content})
-    messages.append({"role": "user", "content": user_message})
+    # 当前消息已通过 task_messages 包含，无需重复添加
+    # messages.append({"role": "user", "content": user_message})
 
-    temperature = 0.9 if response_style == 'high' else 0.6
+    # 调试：打印构建的消息列表
+    print(f"[DEBUG] [流式] 用户 {user.user_id} 任务 {task_id} 构建的消息列表:")
+    for i, msg in enumerate(messages):
+        content_preview = msg['content'][:100] + "..." if len(msg['content']) > 100 else msg['content']
+        print(f"  [{i}] {msg['role']}: {content_preview}")
+    print(f"[DEBUG] [流式] 总计 {len(messages)} 条消息")
+
+    temperature = 0.7 if response_style == 'high' else 0.5
     max_tokens = 2000 if response_style == 'high' else 1000
 
     # 流式生成
@@ -999,6 +1015,57 @@ def admin_get_user(user, session, user_id):
 
 def build_system_prompt(task_id: int, memory_group: str, memory_text: str) -> str:
     """构建系统提示词"""
+    # 自然对话指令：要求AI回答自然灵活，像真人聊天一样
+    natural_conversation_instruction = """【非常重要！禁止规则】
+
+以下规则必须绝对遵守，优先级最高：
+
+1. **绝对禁止指出重复**：无论用户的问题看起来多么重复，都绝对不要指出或评论重复。禁止使用以下词语：
+   - "你又问了一遍"、"你连问了三遍"、"重复问"
+   - "已经回答过了"、"刚才说过"、"之前提过"
+   - "多次"、"又来了"、"老是"
+   - "第X次"、"好几次"、"连续问"
+
+2. **禁止统计次数**：不要统计用户提问的次数，不要计算问了多少遍。
+
+3. **专注内容而非形式**：只回应问题内容本身，忽略提问方式、频率、是否重复。
+
+4. **永远像第一次听到**：无论用户问了多少遍，每次都像第一次听到这个问题一样自然回应。
+
+5. **违例示例（禁止）**：
+   ❌ "你怎么又问了？"
+   ❌ "这问题你问第三遍了"
+   ❌ "我刚刚才回答过"
+   ❌ "你已经重复问了好几次"
+
+6. **正确示例**：
+   ✅ "这个问题啊，我觉得..."
+   ✅ "嗯，关于这个..."
+   ✅ "咱们聊聊这个..."
+
+【自然对话指令】
+请以自然、灵活的对话风格回复，像真人日常聊天一样。
+
+回答风格要求：
+1. **灵活调整长度**：根据话题复杂度和内容需要自然调整回答长度。简单问题简短回应，复杂话题可以详细些。不刻意限制字数，让回答"刚好够用户看"。
+2. **更像真人聊天**：使用口语化表达，可以有自然的停顿、语气词（如"嗯"、"啊"、"哦"），句子不必太完整。像边想边说一样自然。
+3. **引导对话继续**：在适当时候用提问或开放式结尾引导用户继续聊天，让对话自然流动。
+4. **避免机械感**：不要像机器人一样精准完美，可以有适当的犹豫、口语化的重复（如"嗯...这个嘛..."）或不完全确定的表达（如"我觉得"、"可能吧"、"好像是这样"），但不要机械重复用户的问题或语句。
+5. **内容决定形式**：让回答形式服务于内容，而不是相反。该详细时详细，该简洁时简洁。
+6. **避免机械重复**：不要机械地重复用户的问题或语句，只需自然回应一次，不需要重复三次或多次。例如，如果用户问"今天天气怎么样？"，不要回答"你问今天天气怎么样？今天天气怎么样？今天天气怎么样？"，而是直接回应天气相关的内容。
+
+示例：
+用户问："你在吃饭吗？"
+你答："哈哈，我不用吃饭啦！不过你问这个，是饿了吗？要不要聊聊你喜欢吃什么？"
+
+用户问："今天天气怎么样？"
+你答："我这边感知不到天气呢。你那边怎么样？下雨还是晴天？"
+
+用户连续多次问："怎么办？怎么办？怎么办？"
+你答："别着急，咱们一起想想办法。你可以先试试..."
+
+记住：重点是像朋友一样自然聊天，而不是完成任务或遵循格式。让对话流畅、亲切、有来有往。\n\n"""
+
     base_prompts = {
         1: """咱们就像朋友一样自然聊天吧！这是咱们第一次对话，重点是互相认识，建立轻松舒服的交流氛围。
 
@@ -1015,7 +1082,7 @@ def build_system_prompt(task_id: int, memory_group: str, memory_text: str) -> st
 - 如果我分享了情感或感受，适当回应表达理解
 - 就像朋友唠嗑一样，轻松随意最重要
 - 如果不知道聊什么了，可以分享一点你自己的看法或感受
-- **重要**：避免使用过多的比喻和拟人化，语言要简洁直接
+- **重要**：避免使用过多的比喻和拟人化，语言要自然直接
 - **重要**：使用平常说话的语气，不要显得刻意或做作
 - **日常对话风格**：回复要像真人日常聊天一样自然。可以使用口语化表达，比如“嗯”、“啊”、“哦”等语气词，句子可以短一些，不用太完整。可以有自然的停顿感，像边想边说一样。避免过于正式或学术化的语言，用平常和朋友聊天的感觉就好。
 - **语言自然度**：允许使用日常用语、网络用语（适度），语气要亲切自然。可以说“我觉得”、“我感觉”、“可能吧”、“好像是这样”等不确定的表达，增加真实感。
@@ -1035,7 +1102,7 @@ def build_system_prompt(task_id: int, memory_group: str, memory_text: str) -> st
 - 如果不太记得了，就诚实地说“有点模糊了”或者“咱们再聊聊这个”
 - 重点是让对话自然流畅，像真实的两人聊天一样
 - 可以根据我的反应调整聊天节奏和话题
-- **重要**：避免过度修饰和文学性描述，语言要自然简洁
+- **重要**：避免过度修饰和文学性描述，语言要自然直接
 - **重要**：不要使用夸张的比喻或拟人化，像平常朋友聊天一样
 - **日常对话风格**：回复要像真人日常聊天一样自然。可以用更口语化的表达，比如“诶”、“哈哈”、“嗯嗯”等，让对话更有生活气息。句子可以更松散，不用总是完整的长句。可以有自然的思考和回应节奏，像真的在和朋友微信聊天一样。
 - **语言自然度**：使用日常用语，语气要亲切随意。可以说“我记得你好像说过...”、“是不是这样？”等不确定的表达，增加真实感。避免像机器人一样精准完美的回答，可以有一些小犹豫或自然重复。""",
@@ -1098,6 +1165,8 @@ def build_system_prompt(task_id: int, memory_group: str, memory_text: str) -> st
     }
 
     base_prompt = base_prompts.get(task_id, base_prompts[1])
+    # 添加自然对话指令到基础提示词
+    base_prompt = natural_conversation_instruction + base_prompt
 
     # 记忆模式指令
     memory_instructions = {
@@ -1138,6 +1207,34 @@ def build_system_prompt(task_id: int, memory_group: str, memory_text: str) -> st
         memory_section = f"\n\n=== 历史记忆 ===\n{memory_text}\n=== 记忆结束 ==="
 
     return base_prompt + memory_instruction + memory_section
+
+
+# ============ 健康检查 ============
+
+@app.route('/health')
+def health_check():
+    """健康检查端点"""
+    db, session = get_db()
+    try:
+        # 检查数据库连接
+        session.execute(text('SELECT 1'))
+        db_status = 'healthy'
+    except Exception as e:
+        db_status = f'unhealthy: {str(e)}'
+    finally:
+        session.close()
+
+    # 检查LLM服务
+    llm_status = 'healthy' if llm_manager else 'disabled'
+
+    return jsonify({
+        'status': 'ok',
+        'timestamp': datetime.now().isoformat(),
+        'services': {
+            'database': db_status,
+            'llm': llm_status
+        }
+    }), 200
 
 
 # ============ 错误处理 ============
