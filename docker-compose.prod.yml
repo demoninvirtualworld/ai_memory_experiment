@@ -54,7 +54,13 @@ services:
       # 生产环境优化
       PYTHONUNBUFFERED: "1"
       PYTHONDONTWRITEBYTECODE: "1"
-      WORKERS: "4"
+      WORKERS: ${WORKERS:-4}
+      GUNICORN_WORKER_CLASS: ${GUNICORN_WORKER_CLASS:-gevent}
+      GUNICORN_WORKER_CONNECTIONS: ${GUNICORN_WORKER_CONNECTIONS:-1000}
+      GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-120}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-20}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+      DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-3600}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -65,9 +71,9 @@ services:
       - ./logs:/app/logs
     networks:
       - app-network
-    # 使用waitress生产服务器
+    # 使用gunicorn生产服务器，支持高并发
     command: >
-      sh -c "python -c 'from waitress import serve; from app import app; serve(app, host=\"0.0.0.0\", port=8000, threads=4)'"
+      sh -c "gunicorn --config gunicorn.conf.py app:app"
 
   # Nginx反向代理
   nginx:

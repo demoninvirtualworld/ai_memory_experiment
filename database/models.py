@@ -254,6 +254,8 @@ def init_db(db_path: str = 'data/experiment.db', database_url: str = None):
     Returns:
         engine, SessionLocal
     """
+    import os
+
     if not database_url:
         database_url = f"sqlite:///{db_path}"
 
@@ -261,9 +263,29 @@ def init_db(db_path: str = 'data/experiment.db', database_url: str = None):
         'echo': False,  # 生产环境关闭 SQL 日志
         'pool_pre_ping': True,  # 连接健康检查
     }
-    if database_url.startswith('sqlite'):
+
+    # 生产环境连接池优化
+    if database_url.startswith('postgresql'):
+        # PostgreSQL连接池配置
+        pool_size = int(os.environ.get('DB_POOL_SIZE', 20))
+        max_overflow = int(os.environ.get('DB_MAX_OVERFLOW', 10))
+        pool_recycle = int(os.environ.get('DB_POOL_RECYCLE', 3600))  # 1小时
+
+        engine_kwargs.update({
+            'pool_size': pool_size,
+            'max_overflow': max_overflow,
+            'pool_recycle': pool_recycle,
+            'pool_timeout': 30,  # 获取连接超时时间
+        })
+        print(f"[Database] PostgreSQL连接池: pool_size={pool_size}, max_overflow={max_overflow}, pool_recycle={pool_recycle}")
+
+    elif database_url.startswith('sqlite'):
         # Flask 多线程请求下允许 SQLite 跨线程访问连接
         engine_kwargs['connect_args'] = {'check_same_thread': False}
+        # SQLite不需要连接池
+        print(f"[Database] SQLite数据库: {db_path}")
+    else:
+        print(f"[Database] 使用数据库: {database_url.split('@')[-1] if '@' in database_url else database_url}")
 
     engine = create_engine(database_url, **engine_kwargs)
 

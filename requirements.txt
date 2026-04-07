@@ -6,3 +6,5 @@ SQLAlchemy==2.0.36
 numpy==1.26.4
 waitress==3.0.2
 psycopg2-binary==2.9.9
+gunicorn==21.2.0
+gevent==24.2.1
